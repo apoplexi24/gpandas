@@ -13,24 +13,70 @@ import (
 
 type GoPandas struct{}
 
-// FloatColumn represents a column slice of float64 values.
-type FloatCol []float64
+// DataFrame represents a table of data with named columns.
+type DataFrame struct {
+	sync.Mutex
+	Columns []string
+	Series  map[string]Series
+}
 
-// StringColumn represents a column slice of string values.
-type StringCol []string
+// NewDataFrame creates a new empty DataFrame with the specified column names.
+func NewDataFrame(columns []string) *DataFrame {
+	df := &DataFrame{
+		Columns: columns,
+		Series:  make(map[string]Series),
+	}
+	return df
+}
 
-// IntColumn represents a column slice of int64 values.
-type IntCol []int64
+// AddSeries adds a Series to the DataFrame with the given name.
+func (df *DataFrame) AddSeries(name string, series Series) error {
+	df.Lock()
+	defer df.Unlock()
 
-// BoolColumn represents a column slice of bool values.
-type BoolCol []bool
+	// Validation
+	if _, exists := df.Series[name]; exists {
+		return fmt.Errorf("column '%s' already exists in DataFrame", name)
+	}
 
-// Column represents a column slice of any type.
-type Column []any
+	series.SetName(name)
+	df.Series[name] = series
 
-// TypeColumn represents a column slice of a comparable type T.
-type TypeColumn[T comparable] []T
+	// Add to columns if not already present
+	found := false
+	for _, col := range df.Columns {
+		if col == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		df.Columns = append(df.Columns, name)
+	}
 
+	return nil
+}
+
+// Rows returns the number of rows in the DataFrame.
+func (df *DataFrame) Rows() int {
+	if len(df.Columns) == 0 {
+		return 0
+	}
+
+	if len(df.Series) == 0 {
+		return 0
+	}
+
+	// Return length of first series
+	firstCol := df.Columns[0]
+	if series, ok := df.Series[firstCol]; ok {
+		return series.Len()
+	}
+
+	return 0
+}
+
+// GetMapKeys returns a set of keys from a map
 func GetMapKeys[K comparable, V any](input_map map[K]V) (collection.Set[K], error) {
 	keys, err := collection.NewSet[K]()
 	if err != nil {
@@ -40,12 +86,6 @@ func GetMapKeys[K comparable, V any](input_map map[K]V) (collection.Set[K], erro
 		keys.Add(k)
 	}
 	return keys, nil
-}
-
-type DataFrame struct {
-	sync.Mutex
-	Columns []string
-	Data    [][]any
 }
 
 // Rename changes the names of specified columns in the DataFrame.
@@ -127,12 +167,20 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 		return errors.New("the columns specified in 'columns' parameter is not present in the the DataFrame")
 	}
 
-	// all conditions met till this point
+	// Update columns and series map
 	for original_column_name, new_column_name := range columns {
+		// Update column name in Columns slice
 		for df_column_idx := range df.Columns {
 			if df.Columns[df_column_idx] == original_column_name {
 				df.Columns[df_column_idx] = new_column_name
 			}
+		}
+
+		// Update series map
+		if series, ok := df.Series[original_column_name]; ok {
+			series.SetName(new_column_name)
+			df.Series[new_column_name] = series
+			delete(df.Series, original_column_name)
 		}
 	}
 	return nil
@@ -197,25 +245,33 @@ func (df *DataFrame) String() string {
 	// Set headers using the DataFrame's Columns
 	table.SetHeader(df.Columns)
 
-	// Determine how many rows to display (maximum 10)
-	numRows := len(df.Data)
+	// Determine number of rows and max rows to display
+	numRows := df.Rows()
 	displayRows := numRows
 	if numRows > 10 {
 		displayRows = 10
 	}
 
-	// Append only the first displayRows rows to the table
+	// For each row, collect data from all series
 	for i := 0; i < displayRows; i++ {
-		row := df.Data[i]
-		stringRow := make([]string, len(row))
-		for j, val := range row {
-			stringRow[j] = fmt.Sprintf("%v", val)
+		row := make([]string, len(df.Columns))
+		for j, colName := range df.Columns {
+			series, ok := df.Series[colName]
+			if !ok {
+				row[j] = "N/A"
+				continue
+			}
+
+			if series.IsNull(i) {
+				row[j] = "NULL"
+			} else {
+				row[j] = fmt.Sprintf("%v", series.GetValue(i))
+			}
 		}
-		table.Append(stringRow)
+		table.Append(row)
 	}
 
 	// Add row count information.
-	// If there are more than 10 rows, mention that only the first 10 are displayed.
 	shape := fmt.Sprintf("[%d rows x %d columns]", numRows, len(df.Columns))
 	if numRows > 10 {
 		shape = fmt.Sprintf("Showing first 10 rows of %d rows x %d columns", numRows, len(df.Columns))
@@ -256,9 +312,8 @@ func (df *DataFrame) ToCSV(filepath string, separator ...string) (string, error)
 		return "", errors.New("DataFrame is nil")
 	}
 
-	// Default separator is comma
 	sep := ","
-	if len(separator) > 0 {
+	if len(separator) > 0 && separator[0] != "" {
 		sep = separator[0]
 	}
 
@@ -273,26 +328,205 @@ func (df *DataFrame) ToCSV(filepath string, separator ...string) (string, error)
 	}
 	buf.WriteString("\n")
 
-	// Write data rows
-	for _, row := range df.Data {
-		for i, val := range row {
-			if i > 0 {
+	// Write data
+	rowCount := df.Rows()
+	for i := 0; i < rowCount; i++ {
+		for j, colName := range df.Columns {
+			if j > 0 {
 				buf.WriteString(sep)
 			}
-			buf.WriteString(fmt.Sprintf("%v", val))
+
+			series, ok := df.Series[colName]
+			if !ok || series.IsNull(i) {
+				// Write empty value for null
+				buf.WriteString("")
+			} else {
+				buf.WriteString(fmt.Sprintf("%v", series.GetValue(i)))
+			}
 		}
 		buf.WriteString("\n")
 	}
 
-	// If filepath is provided, write to file and return nil
+	// If filepath provided, write to file, otherwise return as string
 	if filepath != "" {
 		err := os.WriteFile(filepath, buf.Bytes(), 0644)
 		if err != nil {
-			return "", fmt.Errorf("failed to write CSV to file: %w", err)
+			return "", fmt.Errorf("error writing CSV to file: %w", err)
 		}
 		return "", nil
 	}
 
-	// If no filepath, return the CSV string
 	return buf.String(), nil
+}
+
+// get returns the value at a specific row and column.
+func (df *DataFrame) Get(row int, col string) (any, error) {
+	if df == nil {
+		return nil, errors.New("DataFrame is nil")
+	}
+
+	series, ok := df.Series[col]
+	if !ok {
+		return nil, fmt.Errorf("column '%s' not found", col)
+	}
+
+	if row < 0 || row >= series.Len() {
+		return nil, fmt.Errorf("row index %d out of bounds", row)
+	}
+
+	if series.IsNull(row) {
+		return nil, nil
+	}
+
+	return series.GetValue(row), nil
+}
+
+// set sets the value at a specific row and column.
+func (df *DataFrame) Set(row int, col string, value any) error {
+	if df == nil {
+		return errors.New("DataFrame is nil")
+	}
+
+	series, ok := df.Series[col]
+	if !ok {
+		return fmt.Errorf("column '%s' not found", col)
+	}
+
+	if row < 0 || row >= series.Len() {
+		return fmt.Errorf("row index %d out of bounds", row)
+	}
+
+	return series.SetValue(row, value)
+}
+
+// Copy creates a deep copy of the DataFrame.
+func (df *DataFrame) Copy() *DataFrame {
+	if df == nil {
+		return nil
+	}
+
+	newDf := NewDataFrame(make([]string, len(df.Columns)))
+	copy(newDf.Columns, df.Columns)
+
+	for _, colName := range df.Columns {
+		if series, ok := df.Series[colName]; ok {
+			newDf.Series[colName] = series.Copy()
+		}
+	}
+
+	return newDf
+}
+
+// Head returns a new DataFrame containing the first n rows.
+func (df *DataFrame) Head(n int) *DataFrame {
+	if df == nil {
+		return nil
+	}
+
+	if n <= 0 {
+		return NewDataFrame(df.Columns)
+	}
+
+	rows := df.Rows()
+	if n > rows {
+		n = rows
+	}
+
+	newDf := NewDataFrame(make([]string, len(df.Columns)))
+	copy(newDf.Columns, df.Columns)
+
+	for _, colName := range df.Columns {
+		if series, ok := df.Series[colName]; ok {
+			newSeries := series.EmptyCopy(n)
+			for i := 0; i < n; i++ {
+				newSeries.SetValue(i, series.GetValue(i))
+			}
+			newDf.Series[colName] = newSeries
+		}
+	}
+
+	return newDf
+}
+
+// IsNA returns true if the value at the specified row and column is null.
+func (df *DataFrame) IsNA(row int, col string) (bool, error) {
+	if df == nil {
+		return false, errors.New("DataFrame is nil")
+	}
+
+	series, ok := df.Series[col]
+	if !ok {
+		return false, fmt.Errorf("column '%s' not found", col)
+	}
+
+	if row < 0 || row >= series.Len() {
+		return false, fmt.Errorf("row index %d out of bounds", row)
+	}
+
+	return series.IsNull(row), nil
+}
+
+// FillNA fills null values in the DataFrame with the specified value.
+func (df *DataFrame) FillNA(value any) *DataFrame {
+	if df == nil {
+		return nil
+	}
+
+	newDf := df.Copy()
+
+	for _, colName := range newDf.Columns {
+		series := newDf.Series[colName]
+		for i := 0; i < series.Len(); i++ {
+			if series.IsNull(i) {
+				series.SetValue(i, value)
+			}
+		}
+	}
+
+	return newDf
+}
+
+// DropNA returns a new DataFrame with rows containing null values removed.
+func (df *DataFrame) DropNA() *DataFrame {
+	if df == nil {
+		return nil
+	}
+
+	rows := df.Rows()
+	if rows == 0 {
+		return df.Copy()
+	}
+
+	// Find rows with no nulls
+	validRows := make([]int, 0, rows)
+	for i := 0; i < rows; i++ {
+		hasNull := false
+		for _, colName := range df.Columns {
+			if series, ok := df.Series[colName]; ok {
+				if series.IsNull(i) {
+					hasNull = true
+					break
+				}
+			}
+		}
+		if !hasNull {
+			validRows = append(validRows, i)
+		}
+	}
+
+	// Create new DataFrame with only valid rows
+	newDf := NewDataFrame(make([]string, len(df.Columns)))
+	copy(newDf.Columns, df.Columns)
+
+	for _, colName := range df.Columns {
+		if series, ok := df.Series[colName]; ok {
+			newSeries := series.EmptyCopy(len(validRows))
+			for i, rowIdx := range validRows {
+				newSeries.SetValue(i, series.GetValue(rowIdx))
+			}
+			newDf.Series[colName] = newSeries
+		}
+	}
+
+	return newDf
 }

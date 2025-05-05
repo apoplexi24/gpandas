@@ -2,6 +2,7 @@ package gpandas_test
 
 import (
 	"gpandas"
+	"gpandas/dataframe"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,16 +98,22 @@ Bob,"Data Scientist, ML",Paris`,
 				}
 
 				// Check if data is present
-				if len(df.Data) == 0 {
+				if df.Rows() == 0 {
 					t.Error("expected non-empty data")
 				}
 
 				// Check if all columns have the same length
-				firstColLen := len(df.Data[0])
-				for i, col := range df.Data {
-					if len(col) != firstColLen {
-						t.Errorf("column %d has inconsistent length: expected %d, got %d",
-							i, firstColLen, len(col))
+				numRows := df.Rows()
+				for _, col := range df.Columns {
+					series, ok := df.Series[col]
+					if !ok {
+						t.Errorf("column %s not found in Series map", col)
+						continue
+					}
+
+					if series.Len() != numRows {
+						t.Errorf("column %s has inconsistent length: expected %d, got %d",
+							col, numRows, series.Len())
 					}
 				}
 			}
@@ -150,11 +157,24 @@ Bob,35,true,92.8`
 	}
 
 	// Verify all values are StringCol (correct behavior)
-	for i, col := range df.Data {
-		for j, val := range col {
-			if _, ok := val.(gpandas.StringCol); !ok {
-				t.Errorf("expected StringCol type for value at column %d row %d, got %T",
-					i, j, val)
+	for _, colName := range df.Columns {
+		series, ok := df.Series[colName]
+		if !ok {
+			t.Errorf("column %s not found in Series map", colName)
+			continue
+		}
+
+		for i := 0; i < series.Len(); i++ {
+			val := series.GetValue(i)
+			// Nullable values are now wrapped in their respective types, not directly StringCol
+			if val == nil {
+				continue
+			}
+			switch series.(type) {
+			case *dataframe.StringSeries:
+				// This is the expected type
+			default:
+				t.Errorf("expected StringSeries type for column %s, got %T", colName, series)
 			}
 		}
 	}

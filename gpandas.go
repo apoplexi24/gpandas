@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"gpandas/dataframe"
+	"gpandas/utils/nullable"
 	"io"
 	"os"
 	"runtime"
@@ -56,18 +57,18 @@ func FloatColumn(col []any) ([]float64, error) {
 // - Ensures type definitions exist for all columns
 //
 // The data is then converted to the internal DataFrame format, performing type assertions
-// based on the specified column types (FloatCol, IntCol, StringCol, BoolCol).
+// based on the specified column types.
 //
 // Parameters:
 //
 //	columns: A slice of strings representing column names
-//	data: A slice of Columns containing the actual data
+//	data: A slice of []any containing the actual data
 //	columns_types: A map defining the expected type for each column
 //
 // Returns:
 //
 //	A pointer to a DataFrame containing the processed data, or an error if validation fails
-func (GoPandas) DataFrame(columns []string, data []Column, columns_types map[string]any) (*dataframe.DataFrame, error) {
+func (GoPandas) DataFrame(columns []string, data [][]any, columns_types map[string]dataframe.SeriesType) (*dataframe.DataFrame, error) {
 	// Validate inputs
 	if columns_types == nil {
 		return nil, errors.New("columns_types map is required to assert column types")
@@ -101,45 +102,22 @@ func (GoPandas) DataFrame(columns []string, data []Column, columns_types map[str
 	}
 
 	// Create DataFrame
-	df := &dataframe.DataFrame{
-		Columns: columns,
-		Data:    make([][]any, len(columns)),
-	}
+	df := dataframe.NewDataFrame(columns)
 
-	// Convert data to internal format
-	for i, col := range data {
-		df.Data[i] = make([]any, rowCount)
-		for j, val := range col {
-			// Type assertion based on columns_types using defined types
-			switch columns_types[columns[i]].(type) {
-			case FloatCol:
-				if v, ok := val.(float64); ok {
-					df.Data[i][j] = FloatCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected FloatColumn, got %T", columns[i], val)
-				}
-			case IntCol:
-				if v, ok := val.(int64); ok {
-					df.Data[i][j] = IntCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected IntColumn, got %T", columns[i], val)
-				}
-			case StringCol:
-				if v, ok := val.(string); ok {
-					df.Data[i][j] = StringCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected StringColumn, got %T", columns[i], val)
-				}
-			case BoolCol:
-				if v, ok := val.(bool); ok {
-					df.Data[i][j] = BoolCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected BoolColumn, got %T", columns[i], val)
-				}
-			default:
-				df.Data[i][j] = val // Fallback for any other type
+	// Create series for each column
+	for i, colName := range columns {
+		seriesType := columns_types[colName]
+		series := dataframe.CreateSeries(seriesType, colName, rowCount)
+
+		// Fill series with data
+		for j, val := range data[i] {
+			if err := series.SetValue(j, val); err != nil {
+				return nil, fmt.Errorf("error setting value for column %s, row %d: %w", colName, j, err)
 			}
 		}
+
+		// Add series to DataFrame
+		df.Series[colName] = series
 	}
 
 	return df, nil
@@ -213,7 +191,13 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 					continue
 				}
 				for j, val := range row.Row {
-					localData[j] = append(localData[j], val)
+					// Convert empty strings to nil for null support
+					if val == "" {
+						localData[j] = append(localData[j], nil)
+					} else {
+						// Store as string values initially
+						localData[j] = append(localData[j], val)
+					}
 				}
 			}
 			resultChan <- localData
@@ -250,21 +234,131 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		combinedData[i] = make([]any, 0)
 	}
 
-	for localData := range resultChan {
-		for i := range localData {
-			combinedData[i] = append(combinedData[i], localData[i]...)
+	for result := range resultChan {
+		for j, colData := range result {
+			combinedData[j] = append(combinedData[j], colData...)
 		}
 	}
 
-	// Infer column types (default to string for now)
-	columnTypes := make(map[string]any, columnCount)
-	for _, header := range headers {
-		columnTypes[header] = StringCol{} // Placeholder for type inference
+	// Create DataFrame and detect column types
+	df := dataframe.NewDataFrame(headers)
+
+	// Try to infer column types by checking values
+	for i, header := range headers {
+		// Create series from column data
+		series := dataframe.CreateSeriesFromData(header, combinedData[i])
+		if err := df.AddSeries(header, series); err != nil {
+			return nil, fmt.Errorf("error adding series for column %s: %w", header, err)
+		}
 	}
 
-	// Construct DataFrame
-	return &dataframe.DataFrame{
-		Columns: headers,
-		Data:    combinedData,
-	}, nil
+	return df, nil
+}
+
+// AutoType attempts to convert string values to more appropriate types.
+// This is a helper function that can be called after Read_csv to improve type detection.
+func (GoPandas) AutoType(df *dataframe.DataFrame) *dataframe.DataFrame {
+	if df == nil {
+		return nil
+	}
+
+	result := dataframe.NewDataFrame(df.Columns)
+
+	for _, colName := range df.Columns {
+		series := df.Series[colName]
+
+		// Skip if it's already the right type
+		if _, isString := series.(*dataframe.StringSeries); !isString {
+			result.Series[colName] = series.Copy()
+			continue
+		}
+
+		// Try to parse as numbers
+		canBeInt := true
+		canBeFloat := true
+		canBeBool := true
+
+		// Check if all non-null values can be parsed as a specific type
+		for i := 0; i < series.Len(); i++ {
+			if series.IsNull(i) {
+				continue
+			}
+
+			strVal := series.GetValue(i).(string)
+
+			if canBeInt {
+				_, err := nullable.ParseInt(strVal)
+				if err != nil {
+					canBeInt = false
+				}
+			}
+
+			if canBeFloat {
+				_, err := nullable.ParseFloat(strVal)
+				if err != nil {
+					canBeFloat = false
+				}
+			}
+
+			if canBeBool {
+				_, err := nullable.ParseBool(strVal)
+				if err != nil {
+					canBeBool = false
+				}
+			}
+
+			// If no type is possible, stop checking
+			if !canBeInt && !canBeFloat && !canBeBool {
+				break
+			}
+		}
+
+		// Create new series with the most specific possible type
+		var newSeries dataframe.Series
+
+		if canBeInt {
+			newSeries = dataframe.NewIntSeries(colName, series.Len())
+			for i := 0; i < series.Len(); i++ {
+				if series.IsNull(i) {
+					newSeries.SetValue(i, nil)
+				} else {
+					strVal := series.GetValue(i).(string)
+					if intVal, err := nullable.ParseInt(strVal); err == nil {
+						newSeries.SetValue(i, intVal.Value)
+					}
+				}
+			}
+		} else if canBeFloat {
+			newSeries = dataframe.NewFloatSeries(colName, series.Len())
+			for i := 0; i < series.Len(); i++ {
+				if series.IsNull(i) {
+					newSeries.SetValue(i, nil)
+				} else {
+					strVal := series.GetValue(i).(string)
+					if floatVal, err := nullable.ParseFloat(strVal); err == nil {
+						newSeries.SetValue(i, floatVal.Value)
+					}
+				}
+			}
+		} else if canBeBool {
+			newSeries = dataframe.NewBoolSeries(colName, series.Len())
+			for i := 0; i < series.Len(); i++ {
+				if series.IsNull(i) {
+					newSeries.SetValue(i, nil)
+				} else {
+					strVal := series.GetValue(i).(string)
+					if boolVal, err := nullable.ParseBool(strVal); err == nil {
+						newSeries.SetValue(i, boolVal.Value)
+					}
+				}
+			}
+		} else {
+			// Keep as string
+			newSeries = series.Copy()
+		}
+
+		result.Series[colName] = newSeries
+	}
+
+	return result
 }

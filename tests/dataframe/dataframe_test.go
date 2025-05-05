@@ -3,6 +3,7 @@ package dataframe_test
 import (
 	"gpandas/dataframe"
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -65,19 +66,31 @@ func TestDataFrameRename(t *testing.T) {
 	}{
 		{
 			name: "successful rename",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B", "C"},
-				Data:    [][]any{{1, 2, 3}, {4, 5, 6}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B", "C"})
+				aSeries := dataframe.CreateSeriesFromData("A", []any{1, 4})
+				bSeries := dataframe.CreateSeriesFromData("B", []any{2, 5})
+				cSeries := dataframe.CreateSeriesFromData("C", []any{3, 6})
+				df.AddSeries("A", aSeries)
+				df.AddSeries("B", bSeries)
+				df.AddSeries("C", cSeries)
+				return df
+			}(),
 			columns:     map[string]string{"A": "X", "B": "Y"},
 			expectError: false,
 		},
 		{
 			name: "rename non-existent column",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B", "C"},
-				Data:    [][]any{{1, 2, 3}, {4, 5, 6}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B", "C"})
+				aSeries := dataframe.CreateSeriesFromData("A", []any{1, 4})
+				bSeries := dataframe.CreateSeriesFromData("B", []any{2, 5})
+				cSeries := dataframe.CreateSeriesFromData("C", []any{3, 6})
+				df.AddSeries("A", aSeries)
+				df.AddSeries("B", bSeries)
+				df.AddSeries("C", cSeries)
+				return df
+			}(),
 			columns:     map[string]string{"D": "X"},
 			expectError: true,
 		},
@@ -89,10 +102,16 @@ func TestDataFrameRename(t *testing.T) {
 		},
 		{
 			name: "empty columns map",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B", "C"},
-				Data:    [][]any{{1, 2, 3}, {4, 5, 6}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B", "C"})
+				aSeries := dataframe.CreateSeriesFromData("A", []any{1, 4})
+				bSeries := dataframe.CreateSeriesFromData("B", []any{2, 5})
+				cSeries := dataframe.CreateSeriesFromData("C", []any{3, 6})
+				df.AddSeries("A", aSeries)
+				df.AddSeries("B", bSeries)
+				df.AddSeries("C", cSeries)
+				return df
+			}(),
 			columns:     map[string]string{},
 			expectError: true,
 		},
@@ -174,10 +193,16 @@ func TestDataFrameString(t *testing.T) {
 	}{
 		{
 			name: "basic dataframe",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B", "C"},
-				Data:    [][]any{{1, 2, 3}, {4, 5, 6}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B", "C"})
+				aSeries := dataframe.CreateSeriesFromData("A", []any{1, 4})
+				bSeries := dataframe.CreateSeriesFromData("B", []any{2, 5})
+				cSeries := dataframe.CreateSeriesFromData("C", []any{3, 6})
+				df.AddSeries("A", aSeries)
+				df.AddSeries("B", bSeries)
+				df.AddSeries("C", cSeries)
+				return df
+			}(),
 			expected: `+---+---+---+
 | A | B | C |
 +---+---+---+
@@ -189,10 +214,10 @@ func TestDataFrameString(t *testing.T) {
 		},
 		{
 			name: "empty dataframe",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B"},
-				Data:    [][]any{},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B"})
+				return df
+			}(),
 			expected: `+---+---+
 | A | B |
 +---+---+
@@ -202,10 +227,16 @@ func TestDataFrameString(t *testing.T) {
 		},
 		{
 			name: "mixed data types",
-			df: &dataframe.DataFrame{
-				Columns: []string{"Name", "Age", "Active"},
-				Data:    [][]any{{"John", 30, true}, {"Jane", 25, false}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"Name", "Age", "Active"})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"John", "Jane"})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{30, 25})
+				activeSeries := dataframe.CreateSeriesFromData("Active", []any{true, false})
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				df.AddSeries("Active", activeSeries)
+				return df
+			}(),
 			expected: `+------+-----+--------+
 | Name | Age | Active |
 +------+-----+--------+
@@ -342,74 +373,130 @@ func TestDataFrameMerge(t *testing.T) {
 	}{
 		{
 			name: "inner merge - basic case",
-			df1: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name"},
-				Data:    [][]any{{1, "Alice"}, {2, "Bob"}, {3, "Charlie"}},
-			},
-			df2: &dataframe.DataFrame{
-				Columns: []string{"ID", "Age"},
-				Data:    [][]any{{1, 25}, {2, 30}, {4, 35}},
-			},
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", "Charlie"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 4})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, 35})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			on:  "ID",
 			how: dataframe.InnerMerge,
-			expected: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name", "Age"},
-				Data:    [][]any{{1, "Alice", 25}, {2, "Bob", 30}},
-			},
+			expected: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob"})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			expectError: false,
 		},
 		{
 			name: "left merge - keep all left rows",
-			df1: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name"},
-				Data:    [][]any{{1, "Alice"}, {2, "Bob"}, {3, "Charlie"}},
-			},
-			df2: &dataframe.DataFrame{
-				Columns: []string{"ID", "Age"},
-				Data:    [][]any{{1, 25}, {2, 30}},
-			},
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", "Charlie"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			on:  "ID",
 			how: dataframe.LeftMerge,
-			expected: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name", "Age"},
-				Data:    [][]any{{1, "Alice", 25}, {2, "Bob", 30}, {3, "Charlie", nil}},
-			},
+			expected: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", "Charlie"})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, nil})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			expectError: false,
 		},
 		{
 			name: "right merge - keep all right rows",
-			df1: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name"},
-				Data:    [][]any{{1, "Alice"}, {2, "Bob"}},
-			},
-			df2: &dataframe.DataFrame{
-				Columns: []string{"ID", "Age"},
-				Data:    [][]any{{1, 25}, {2, 30}, {3, 35}},
-			},
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, 35})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			on:  "ID",
 			how: dataframe.RightMerge,
-			expected: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name", "Age"},
-				Data:    [][]any{{1, "Alice", 25}, {2, "Bob", 30}, {3, nil, 35}},
-			},
+			expected: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", nil})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, 35})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			expectError: false,
 		},
 		{
 			name: "full merge - keep all rows",
-			df1: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name"},
-				Data:    [][]any{{1, "Alice"}, {2, "Bob"}, {3, "Charlie"}},
-			},
-			df2: &dataframe.DataFrame{
-				Columns: []string{"ID", "Age"},
-				Data:    [][]any{{1, 25}, {2, 30}, {4, 35}},
-			},
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", "Charlie"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 4})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, 35})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			on:  "ID",
 			how: dataframe.FullMerge,
-			expected: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name", "Age"},
-				Data:    [][]any{{1, "Alice", 25}, {2, "Bob", 30}, {3, "Charlie", nil}, {4, nil, 35}},
-			},
+			expected: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3, 4})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", "Charlie", nil})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, nil, 35})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			expectError: false,
 		},
 		{
@@ -422,28 +509,44 @@ func TestDataFrameMerge(t *testing.T) {
 		},
 		{
 			name: "column not found error",
-			df1: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name"},
-				Data:    [][]any{{1, "Alice"}},
-			},
-			df2: &dataframe.DataFrame{
-				Columns: []string{"UserID", "Age"},
-				Data:    [][]any{{1, 25}},
-			},
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"UserID", "Age"})
+				userIdSeries := dataframe.CreateSeriesFromData("UserID", []any{1})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25})
+				df.AddSeries("UserID", userIdSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			on:          "ID",
 			how:         dataframe.InnerMerge,
 			expectError: true,
 		},
 		{
 			name: "invalid merge type error",
-			df1: &dataframe.DataFrame{
-				Columns: []string{"ID", "Name"},
-				Data:    [][]any{{1, "Alice"}},
-			},
-			df2: &dataframe.DataFrame{
-				Columns: []string{"ID", "Age"},
-				Data:    [][]any{{1, 25}},
-			},
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
 			on:          "ID",
 			how:         "invalid",
 			expectError: true,
@@ -472,14 +575,19 @@ func TestDataFrameMerge(t *testing.T) {
 			}
 
 			// Check data matches
-			if len(result.Data) != len(test.expected.Data) {
-				t.Errorf("data length mismatch\nexpected: %d\ngot: %d", len(test.expected.Data), len(result.Data))
+			if result.Rows() != test.expected.Rows() {
+				t.Errorf("data length mismatch\nexpected: %d\ngot: %d", test.expected.Rows(), result.Rows())
 				return
 			}
 
-			for i, row := range result.Data {
-				if !sliceEqual(row, test.expected.Data[i]) {
-					t.Errorf("row %d mismatch\nexpected: %v\ngot: %v", i, test.expected.Data[i], row)
+			// Compare each value in each column
+			for _, col := range result.Columns {
+				for i := 0; i < result.Rows(); i++ {
+					expectedVal, _ := test.expected.Get(i, col)
+					actualVal, _ := result.Get(i, col)
+					if !reflect.DeepEqual(expectedVal, actualVal) {
+						t.Errorf("value mismatch at row %d, column %s\nexpected: %v\ngot: %v", i, col, expectedVal, actualVal)
+					}
 				}
 			}
 		})
@@ -521,20 +629,32 @@ func TestDataFrameToCSV(t *testing.T) {
 	}{
 		{
 			name: "basic csv string output",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B", "C"},
-				Data:    [][]any{{1, 2, 3}, {4, 5, 6}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B", "C"})
+				aSeries := dataframe.CreateSeriesFromData("A", []any{1, 4})
+				bSeries := dataframe.CreateSeriesFromData("B", []any{2, 5})
+				cSeries := dataframe.CreateSeriesFromData("C", []any{3, 6})
+				df.AddSeries("A", aSeries)
+				df.AddSeries("B", bSeries)
+				df.AddSeries("C", cSeries)
+				return df
+			}(),
 			filepath:    "",
 			expected:    "A,B,C\n1,2,3\n4,5,6\n",
 			expectError: false,
 		},
 		{
 			name: "custom separator",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B", "C"},
-				Data:    [][]any{{1, 2, 3}, {4, 5, 6}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B", "C"})
+				aSeries := dataframe.CreateSeriesFromData("A", []any{1, 4})
+				bSeries := dataframe.CreateSeriesFromData("B", []any{2, 5})
+				cSeries := dataframe.CreateSeriesFromData("C", []any{3, 6})
+				df.AddSeries("A", aSeries)
+				df.AddSeries("B", bSeries)
+				df.AddSeries("C", cSeries)
+				return df
+			}(),
 			filepath:    "",
 			separator:   ";",
 			expected:    "A;B;C\n1;2;3\n4;5;6\n",
@@ -542,10 +662,16 @@ func TestDataFrameToCSV(t *testing.T) {
 		},
 		{
 			name: "mixed data types",
-			df: &dataframe.DataFrame{
-				Columns: []string{"Name", "Age", "Active"},
-				Data:    [][]any{{"John", 30, true}, {"Jane", 25, false}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"Name", "Age", "Active"})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"John", "Jane"})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{30, 25})
+				activeSeries := dataframe.CreateSeriesFromData("Active", []any{true, false})
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				df.AddSeries("Active", activeSeries)
+				return df
+			}(),
 			filepath:    "",
 			expected:    "Name,Age,Active\nJohn,30,true\nJane,25,false\n",
 			expectError: false,
@@ -558,10 +684,14 @@ func TestDataFrameToCSV(t *testing.T) {
 		},
 		{
 			name: "invalid file path",
-			df: &dataframe.DataFrame{
-				Columns: []string{"A", "B"},
-				Data:    [][]any{{1, 2}},
-			},
+			df: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"A", "B"})
+				aSeries := dataframe.CreateSeriesFromData("A", []any{1})
+				bSeries := dataframe.CreateSeriesFromData("B", []any{2})
+				df.AddSeries("A", aSeries)
+				df.AddSeries("B", bSeries)
+				return df
+			}(),
 			filepath:    "/nonexistent/directory/file.csv",
 			expectError: true,
 		},
@@ -611,10 +741,14 @@ func TestDataFrameToCSV(t *testing.T) {
 
 	// Test successful file writing with temporary file
 	t.Run("successful file writing", func(t *testing.T) {
-		df := &dataframe.DataFrame{
-			Columns: []string{"A", "B"},
-			Data:    [][]any{{1, 2}, {3, 4}},
-		}
+		df := func() *dataframe.DataFrame {
+			df := dataframe.NewDataFrame([]string{"A", "B"})
+			aSeries := dataframe.CreateSeriesFromData("A", []any{1, 3})
+			bSeries := dataframe.CreateSeriesFromData("B", []any{2, 4})
+			df.AddSeries("A", aSeries)
+			df.AddSeries("B", bSeries)
+			return df
+		}()
 		tempFile := t.TempDir() + "/test.csv"
 		expected := "A,B\n1,2\n3,4\n"
 

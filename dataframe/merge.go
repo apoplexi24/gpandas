@@ -32,322 +32,536 @@ const (
 // Returns:
 //   - A new DataFrame containing the merged data.
 //   - An error if the merge operation fails, such as if the specified column does not exist in one or both DataFrames.
-//
-// Examples:
-//
-//	// Create two sample DataFrames
-//	df1 := &DataFrame{
-//		Columns: []string{"ID", "Name"},
-//		Data: [][]any{
-//			{1, "Alice"},
-//			{2, "Bob"},
-//			{3, "Charlie"},
-//		},
-//	}
-//
-//	df2 := &DataFrame{
-//		Columns: []string{"ID", "Age"},
-//		Data: [][]any{
-//			{1, 25},
-//			{2, 30},
-//			{4, 35},
-//		},
-//	}
-//
-//	// Inner merge example (only matching IDs)
-//	result, err := df1.Merge(df2, "ID", InnerMerge)
-//	// Result:
-//	// ID | Name    | Age
-//	// 1  | Alice   | 25
-//	// 2  | Bob     | 30
-//
-//	// Left merge example (all rows from df1)
-//	result, err := df1.Merge(df2, "ID", LeftMerge)
-//	// Result:
-//	// ID | Name    | Age
-//	// 1  | Alice   | 25
-//	// 2  | Bob     | 30
-//	// 3  | Charlie | nil
-//
-//	// Full merge example (all rows from both)
-//	result, err := df1.Merge(df2, "ID", FullMerge)
-//	// Result:
-//	// ID | Name    | Age
-//	// 1  | Alice   | 25
-//	// 2  | Bob     | 30
-//	// 3  | Charlie | nil
-//	// 4  | nil     | 35
 func (df *DataFrame) Merge(other *DataFrame, on string, how MergeHow) (*DataFrame, error) {
 	if df == nil || other == nil {
 		return nil, errors.New("both DataFrames must be non-nil")
 	}
 
 	// Validate 'on' column exists in both DataFrames
-	df1ColIdx := -1
-	df2ColIdx := -1
-	for i, col := range df.Columns {
-		if col == on {
-			df1ColIdx = i
-			break
-		}
-	}
-	for i, col := range other.Columns {
-		if col == on {
-			df2ColIdx = i
-			break
-		}
-	}
-	if df1ColIdx == -1 || df2ColIdx == -1 {
+	_, okLeft := df.Series[on]
+	_, okRight := other.Series[on]
+
+	if !okLeft || !okRight {
 		return nil, fmt.Errorf("column '%s' not found in both DataFrames", on)
 	}
 
-	// Create maps for faster lookups
-	df2Map := make(map[any][]int)
-	for i, row := range other.Data {
-		key := row[df2ColIdx]
-		df2Map[key] = append(df2Map[key], i)
+	// Create map for faster lookups
+	rightKeysMap := make(map[any][]int)
+	rightSeries := other.Series[on]
+	for i := 0; i < rightSeries.Len(); i++ {
+		if !rightSeries.IsNull(i) {
+			key := rightSeries.GetValue(i)
+			rightKeysMap[key] = append(rightKeysMap[key], i)
+		}
 	}
 
-	// Prepare result columns
-	resultColumns := make([]string, 0)
+	// Prepare result columns (excluding the join column from the right DataFrame)
+	resultColumns := make([]string, 0, len(df.Columns)+len(other.Columns)-1)
 	resultColumns = append(resultColumns, df.Columns...)
+
 	for _, col := range other.Columns {
 		if col != on {
 			resultColumns = append(resultColumns, col)
 		}
 	}
 
-	// Prepare result data based on merge type
-	var resultData [][]any
+	// Perform appropriate merge operation
 	switch how {
 	case InnerMerge:
-		resultData = performInnerMerge(df, other, df1ColIdx, df2ColIdx, df2Map)
+		return performInnerMerge(df, other, on, rightKeysMap)
 	case LeftMerge:
-		resultData = performLeftMerge(df, other, df1ColIdx, df2ColIdx, df2Map)
+		return performLeftMerge(df, other, on, rightKeysMap)
 	case RightMerge:
-		resultData = performRightMerge(df, other, df1ColIdx, df2ColIdx, df2Map)
+		return performRightMerge(df, other, on, rightKeysMap)
 	case FullMerge:
-		resultData = performFullMerge(df, other, df1ColIdx, df2ColIdx, df2Map)
+		return performFullMerge(df, other, on, rightKeysMap)
 	default:
 		return nil, fmt.Errorf("invalid merge type: %s", how)
 	}
-
-	return &DataFrame{
-		Columns: resultColumns,
-		Data:    resultData,
-	}, nil
 }
 
-// performInnerMerge combines two DataFrames based on a specified column index,
-// returning only the rows that have matching values in both DataFrames.
-//
-// Parameters:
-//   - df1: The first DataFrame to merge.
-//   - df2: The second DataFrame to merge.
-//   - df1ColIdx: The index of the column in the first DataFrame to merge on.
-//   - df2ColIdx: The index of the column in the second DataFrame to merge on.
-//   - df2Map: A map created from the second DataFrame for faster lookups, where the key is the value
-//     in the merge column and the value is a slice of indices of rows in the second DataFrame that
-//     have that key.
-//
-// Returns: A slice of slices containing the merged data, where each inner slice represents a row.
-// The resulting rows will include all columns from the first DataFrame and the columns from the second DataFrame, excluding the merge column from the second DataFrame.
-//
-// Example:
-//
-//	result := performInnerMerge(df1, df2, 0, 0, df2Map)
-//	// This will merge df1 and df2 on the first column of each DataFrame,
-//	// returning only the rows with matching values in that column.
-func performInnerMerge(df1, df2 *DataFrame, df1ColIdx, df2ColIdx int, df2Map map[any][]int) [][]any {
-	if df1 == nil || df2 == nil {
-		return nil
+// performInnerMerge combines two DataFrames with an inner join
+func performInnerMerge(left, right *DataFrame, on string, rightKeysMap map[any][]int) (*DataFrame, error) {
+	// Determine columns for result (all from left + non-join columns from right)
+	resultColumns := make([]string, 0, len(left.Columns)+len(right.Columns)-1)
+	resultColumns = append(resultColumns, left.Columns...)
+
+	rightColumns := make([]string, 0, len(right.Columns)-1)
+	for _, col := range right.Columns {
+		if col != on {
+			resultColumns = append(resultColumns, col)
+			rightColumns = append(rightColumns, col)
+		}
 	}
-	var result [][]any
-	for _, row1 := range df1.Data {
-		key := row1[df1ColIdx]
-		if matches, ok := df2Map[key]; ok {
-			for _, matchIdx := range matches {
-				row2 := df2.Data[matchIdx]
-				newRow := make([]any, 0)
-				newRow = append(newRow, row1...)
-				for j, val := range row2 {
-					if j != df2ColIdx {
-						newRow = append(newRow, val)
-					}
+
+	result := NewDataFrame(resultColumns)
+
+	// Count total rows for pre-allocation
+	totalRows := 0
+	leftSeries := left.Series[on]
+
+	for i := 0; i < leftSeries.Len(); i++ {
+		if leftSeries.IsNull(i) {
+			continue
+		}
+
+		key := leftSeries.GetValue(i)
+		if matches, ok := rightKeysMap[key]; ok {
+			totalRows += len(matches)
+		}
+	}
+
+	// Create series for result with pre-allocated space
+	for _, col := range left.Columns {
+		leftCol := left.Series[col]
+		var seriesType SeriesType
+
+		switch leftCol.(type) {
+		case *IntSeries:
+			seriesType = IntType
+		case *FloatSeries:
+			seriesType = FloatType
+		case *StringSeries:
+			seriesType = StringType
+		case *BoolSeries:
+			seriesType = BoolType
+		default:
+			seriesType = StringType
+		}
+
+		newSeries := CreateSeries(seriesType, col, totalRows)
+		result.Series[col] = newSeries
+	}
+
+	for _, col := range rightColumns {
+		rightCol := right.Series[col]
+		var seriesType SeriesType
+
+		switch rightCol.(type) {
+		case *IntSeries:
+			seriesType = IntType
+		case *FloatSeries:
+			seriesType = FloatType
+		case *StringSeries:
+			seriesType = StringType
+		case *BoolSeries:
+			seriesType = BoolType
+		default:
+			seriesType = StringType
+		}
+
+		newSeries := CreateSeries(seriesType, col, totalRows)
+		result.Series[col] = newSeries
+	}
+
+	// Perform inner join
+	resultIdx := 0
+	for i := 0; i < leftSeries.Len(); i++ {
+		if leftSeries.IsNull(i) {
+			continue
+		}
+
+		key := leftSeries.GetValue(i)
+		if matches, ok := rightKeysMap[key]; ok {
+			for _, j := range matches {
+				// Copy values from left DataFrame
+				for _, col := range left.Columns {
+					val := left.Series[col].GetValue(i)
+					result.Series[col].SetValue(resultIdx, val)
 				}
-				result = append(result, newRow)
+
+				// Copy values from right DataFrame (excluding the join column)
+				for _, col := range rightColumns {
+					val := right.Series[col].GetValue(j)
+					result.Series[col].SetValue(resultIdx, val)
+				}
+
+				resultIdx++
 			}
 		}
 	}
-	return result
+
+	return result, nil
 }
 
-// performLeftMerge combines two DataFrames based on a specified column index,
-// keeping all rows from the first DataFrame and matching rows from the second DataFrame.
-//
-// Parameters:
-//   - df1: The first DataFrame to merge.
-//   - df2: The second DataFrame to merge.
-//   - df1ColIdx: The index of the column in the first DataFrame to merge on.
-//   - df2ColIdx: The index of the column in the second DataFrame to merge on.
-//   - df2Map: A map created from the second DataFrame for faster lookups, where the key is the value
-//     in the merge column and the value is a slice of indices of rows in the second DataFrame that
-//     have that key.
-//
-// Returns: A slice of slices containing the merged data, where each inner slice represents a row.
-// The resulting rows will include all rows from the first DataFrame, with matching data from the second DataFrame where available, and nil values where no match exists.
-//
-// Example:
-//
-//	result := performLeftMerge(df1, df2, 0, 0, df2Map)
-//	// This will keep all rows from df1 and add matching columns from df2,
-//	// filling with nil values when there's no match in df2.
-func performLeftMerge(df1, df2 *DataFrame, df1ColIdx, df2ColIdx int, df2Map map[any][]int) [][]any {
-	if df1 == nil || df2 == nil {
-		return nil
-	}
-	var result [][]any
-	nullRow := make([]any, len(df2.Columns)-1)
+// performLeftMerge combines two DataFrames with a left join
+func performLeftMerge(left, right *DataFrame, on string, rightKeysMap map[any][]int) (*DataFrame, error) {
+	// Determine columns for result (all from left + non-join columns from right)
+	resultColumns := make([]string, 0, len(left.Columns)+len(right.Columns)-1)
+	resultColumns = append(resultColumns, left.Columns...)
 
-	for _, row1 := range df1.Data {
-		key := row1[df1ColIdx]
-		if matches, ok := df2Map[key]; ok {
-			for _, matchIdx := range matches {
-				row2 := df2.Data[matchIdx]
-				newRow := make([]any, 0)
-				newRow = append(newRow, row1...)
-				for j, val := range row2 {
-					if j != df2ColIdx {
-						newRow = append(newRow, val)
-					}
-				}
-				result = append(result, newRow)
+	rightColumns := make([]string, 0, len(right.Columns)-1)
+	for _, col := range right.Columns {
+		if col != on {
+			resultColumns = append(resultColumns, col)
+			rightColumns = append(rightColumns, col)
+		}
+	}
+
+	result := NewDataFrame(resultColumns)
+
+	// Count total rows for pre-allocation
+	leftRows := left.Rows()
+
+	// Create series for result with pre-allocated space
+	for _, col := range left.Columns {
+		leftCol := left.Series[col]
+		var seriesType SeriesType
+
+		switch leftCol.(type) {
+		case *IntSeries:
+			seriesType = IntType
+		case *FloatSeries:
+			seriesType = FloatType
+		case *StringSeries:
+			seriesType = StringType
+		case *BoolSeries:
+			seriesType = BoolType
+		default:
+			seriesType = StringType
+		}
+
+		newSeries := CreateSeries(seriesType, col, leftRows)
+		result.Series[col] = newSeries
+	}
+
+	for _, col := range rightColumns {
+		rightCol := right.Series[col]
+		var seriesType SeriesType
+
+		switch rightCol.(type) {
+		case *IntSeries:
+			seriesType = IntType
+		case *FloatSeries:
+			seriesType = FloatType
+		case *StringSeries:
+			seriesType = StringType
+		case *BoolSeries:
+			seriesType = BoolType
+		default:
+			seriesType = StringType
+		}
+
+		newSeries := CreateSeries(seriesType, col, leftRows)
+		result.Series[col] = newSeries
+	}
+
+	// Perform left join
+	leftSeries := left.Series[on]
+
+	for i := 0; i < leftSeries.Len(); i++ {
+		// Copy values from left DataFrame
+		for _, col := range left.Columns {
+			val := left.Series[col].GetValue(i)
+			result.Series[col].SetValue(i, val)
+		}
+
+		if leftSeries.IsNull(i) {
+			// For null join values, set nulls for right columns
+			for _, col := range rightColumns {
+				result.Series[col].SetValue(i, nil)
+			}
+			continue
+		}
+
+		key := leftSeries.GetValue(i)
+		if matches, ok := rightKeysMap[key]; ok && len(matches) > 0 {
+			// Match found - use first match
+			j := matches[0]
+
+			// Copy values from right DataFrame (excluding the join column)
+			for _, col := range rightColumns {
+				val := right.Series[col].GetValue(j)
+				result.Series[col].SetValue(i, val)
 			}
 		} else {
-			newRow := make([]any, 0)
-			newRow = append(newRow, row1...)
-			newRow = append(newRow, nullRow...)
-			result = append(result, newRow)
+			// No match - set nulls for right columns
+			for _, col := range rightColumns {
+				result.Series[col].SetValue(i, nil)
+			}
 		}
 	}
-	return result
+
+	return result, nil
 }
 
-// performRightMerge combines two DataFrames based on a specified column index,
-// keeping all rows from the second DataFrame and matching rows from the first DataFrame.
-//
-// Parameters:
-//   - df1: The first DataFrame to merge.
-//   - df2: The second DataFrame to merge.
-//   - df1ColIdx: The index of the column in the first DataFrame to merge on.
-//   - df2ColIdx: The index of the column in the second DataFrame to merge on.
-//   - df2Map: A map created from the second DataFrame for faster lookups (unused in right merge).
-//
-// Returns: A slice of slices containing the merged data, where each inner slice represents a row.
-// The resulting rows will include all rows from the second DataFrame, with matching data from the first DataFrame where available, and nil values where no match exists.
-//
-// Example:
-//
-//	result := performRightMerge(df1, df2, 0, 0, df2Map)
-//	// This will keep all rows from df2 and add matching columns from df1,
-//	// filling with nil values when there's no match in df1.
-func performRightMerge(df1, df2 *DataFrame, df1ColIdx, df2ColIdx int, _ map[any][]int) [][]any {
-	if df1 == nil || df2 == nil {
-		return nil
-	}
-	// Create reverse mapping for df1
-	df1Map := make(map[any][]int)
-	for i, row := range df1.Data {
-		key := row[df1ColIdx]
-		df1Map[key] = append(df1Map[key], i)
+// performRightMerge combines two DataFrames with a right join
+func performRightMerge(left, right *DataFrame, on string, rightKeysMap map[any][]int) (*DataFrame, error) {
+	// Create a left map similar to the right map
+	leftKeysMap := make(map[any][]int)
+	leftSeries := left.Series[on]
+	for i := 0; i < leftSeries.Len(); i++ {
+		if !leftSeries.IsNull(i) {
+			key := leftSeries.GetValue(i)
+			leftKeysMap[key] = append(leftKeysMap[key], i)
+		}
 	}
 
-	var result [][]any
-	nullRow := make([]any, len(df1.Columns))
+	// Determine columns for result (all from left + non-join columns from right)
+	resultColumns := make([]string, 0, len(left.Columns)+len(right.Columns)-1)
+	resultColumns = append(resultColumns, left.Columns...)
 
-	for _, row2 := range df2.Data {
-		key := row2[df2ColIdx]
-		if matches, ok := df1Map[key]; ok {
-			for _, matchIdx := range matches {
-				row1 := df1.Data[matchIdx]
-				newRow := make([]any, 0)
-				newRow = append(newRow, row1...)
-				for j, val := range row2 {
-					if j != df2ColIdx {
-						newRow = append(newRow, val)
-					}
+	rightColumns := make([]string, 0, len(right.Columns)-1)
+	for _, col := range right.Columns {
+		if col != on {
+			resultColumns = append(resultColumns, col)
+			rightColumns = append(rightColumns, col)
+		}
+	}
+
+	result := NewDataFrame(resultColumns)
+
+	// Count total rows for pre-allocation
+	rightRows := right.Rows()
+
+	// Create series for result with pre-allocated space
+	for _, col := range left.Columns {
+		leftCol := left.Series[col]
+		var seriesType SeriesType
+
+		switch leftCol.(type) {
+		case *IntSeries:
+			seriesType = IntType
+		case *FloatSeries:
+			seriesType = FloatType
+		case *StringSeries:
+			seriesType = StringType
+		case *BoolSeries:
+			seriesType = BoolType
+		default:
+			seriesType = StringType
+		}
+
+		newSeries := CreateSeries(seriesType, col, rightRows)
+		result.Series[col] = newSeries
+	}
+
+	for _, col := range rightColumns {
+		rightCol := right.Series[col]
+		var seriesType SeriesType
+
+		switch rightCol.(type) {
+		case *IntSeries:
+			seriesType = IntType
+		case *FloatSeries:
+			seriesType = FloatType
+		case *StringSeries:
+			seriesType = StringType
+		case *BoolSeries:
+			seriesType = BoolType
+		default:
+			seriesType = StringType
+		}
+
+		newSeries := CreateSeries(seriesType, col, rightRows)
+		result.Series[col] = newSeries
+	}
+
+	// Perform right join
+	rightSeries := right.Series[on]
+
+	for i := 0; i < rightSeries.Len(); i++ {
+		// Copy values from right DataFrame (excluding join column)
+		for _, col := range rightColumns {
+			val := right.Series[col].GetValue(i)
+			result.Series[col].SetValue(i, val)
+		}
+
+		// Copy join column value
+		result.Series[on].SetValue(i, rightSeries.GetValue(i))
+
+		if rightSeries.IsNull(i) {
+			// For null join values, set nulls for left columns (except join column)
+			for _, col := range left.Columns {
+				if col != on {
+					result.Series[col].SetValue(i, nil)
 				}
-				result = append(result, newRow)
+			}
+			continue
+		}
+
+		key := rightSeries.GetValue(i)
+		if matches, ok := leftKeysMap[key]; ok && len(matches) > 0 {
+			// Match found - use first match
+			j := matches[0]
+
+			// Copy values from left DataFrame (excluding the join column)
+			for _, col := range left.Columns {
+				if col != on {
+					val := left.Series[col].GetValue(j)
+					result.Series[col].SetValue(i, val)
+				}
 			}
 		} else {
-			newRow := make([]any, 0)
-			// Set the key column value instead of using null
-			nullRow[df1ColIdx] = key
-			newRow = append(newRow, nullRow...)
-			for j, val := range row2 {
-				if j != df2ColIdx {
-					newRow = append(newRow, val)
+			// No match - set nulls for left columns (except join column)
+			for _, col := range left.Columns {
+				if col != on {
+					result.Series[col].SetValue(i, nil)
 				}
 			}
-			result = append(result, newRow)
-			// Reset the key column back to nil for next iteration
-			nullRow[df1ColIdx] = nil
 		}
 	}
-	return result
+
+	return result, nil
 }
 
-// performFullMerge combines two DataFrames based on a specified column index,
-// keeping all rows from both DataFrames and matching where possible.
-//
-// Parameters:
-//   - df1: The first DataFrame to merge.
-//   - df2: The second DataFrame to merge.
-//   - df1ColIdx: The index of the column in the first DataFrame to merge on.
-//   - df2ColIdx: The index of the column in the second DataFrame to merge on.
-//   - df2Map: A map created from the second DataFrame for faster lookups, where the key is the value
-//     in the merge column and the value is a slice of indices of rows in the second DataFrame that
-//     have that key.
-//
-// Returns: A slice of slices containing the merged data, where each inner slice represents a row.
-// The resulting rows will include all rows from both DataFrames, with matching data where available and nil values where no match exists.
-//
-// Example:
-//
-//	result := performFullMerge(df1, df2, 0, 0, df2Map)
-//	// This will keep all rows from both df1 and df2, matching where possible,
-//	// filling with nil values when there's no match in either DataFrame.
-func performFullMerge(df1, df2 *DataFrame, df1ColIdx, df2ColIdx int, df2Map map[any][]int) [][]any {
-	if df1 == nil || df2 == nil {
-		return nil
-	}
-	// Get all rows from left merge
-	result := performLeftMerge(df1, df2, df1ColIdx, df2ColIdx, df2Map)
-
-	// Create set of keys already processed
-	processedKeys := make(map[any]bool)
-	for _, row := range df1.Data {
-		processedKeys[row[df1ColIdx]] = true
-	}
-
-	// Add remaining rows from right DataFrame
-	nullRow := make([]any, len(df1.Columns))
-	for _, row2 := range df2.Data {
-		key := row2[df2ColIdx]
-		if !processedKeys[key] {
-			newRow := make([]any, 0)
-			// Set the key column value instead of using null
-			nullRow[df1ColIdx] = key
-			newRow = append(newRow, nullRow...)
-			for j, val := range row2 {
-				if j != df2ColIdx {
-					newRow = append(newRow, val)
-				}
-			}
-			result = append(result, newRow)
-			// Reset the key column back to nil for next iteration
-			nullRow[df1ColIdx] = nil
+// performFullMerge combines two DataFrames with a full outer join
+func performFullMerge(left, right *DataFrame, on string, rightKeysMap map[any][]int) (*DataFrame, error) {
+	// Create a left map similar to the right map
+	leftKeysMap := make(map[any][]int)
+	leftSeries := left.Series[on]
+	for i := 0; i < leftSeries.Len(); i++ {
+		if !leftSeries.IsNull(i) {
+			key := leftSeries.GetValue(i)
+			leftKeysMap[key] = append(leftKeysMap[key], i)
 		}
 	}
-	return result
+
+	// Determine columns for result (all from left + non-join columns from right)
+	resultColumns := make([]string, 0, len(left.Columns)+len(right.Columns)-1)
+	resultColumns = append(resultColumns, left.Columns...)
+
+	rightColumns := make([]string, 0, len(right.Columns)-1)
+	for _, col := range right.Columns {
+		if col != on {
+			resultColumns = append(resultColumns, col)
+			rightColumns = append(rightColumns, col)
+		}
+	}
+
+	result := NewDataFrame(resultColumns)
+
+	// For full join, we'll build the result in phases
+
+	// Phase 1: Add all rows from left with matching rows from right
+	leftRows := left.Rows()
+	leftMatchedKeys := make(map[any]bool)
+
+	// Create temporary series to collect data
+	tempSeries := make(map[string][]any)
+	for _, col := range resultColumns {
+		tempSeries[col] = make([]any, 0, leftRows)
+	}
+
+	// Process left DataFrame
+	for i := 0; i < leftSeries.Len(); i++ {
+		// Copy values from left DataFrame
+		for _, col := range left.Columns {
+			tempSeries[col] = append(tempSeries[col], left.Series[col].GetValue(i))
+		}
+
+		// Initialize right columns to null
+		for _, col := range rightColumns {
+			tempSeries[col] = append(tempSeries[col], nil)
+		}
+
+		if leftSeries.IsNull(i) {
+			// For null join values, keep nulls for right columns
+			continue
+		}
+
+		key := leftSeries.GetValue(i)
+		leftMatchedKeys[key] = true
+
+		if matches, ok := rightKeysMap[key]; ok && len(matches) > 0 {
+			// Match found - use first match
+			j := matches[0]
+
+			// Update values from right DataFrame (excluding the join column)
+			for _, col := range rightColumns {
+				lastIdx := len(tempSeries[col]) - 1
+				tempSeries[col][lastIdx] = right.Series[col].GetValue(j)
+			}
+		}
+	}
+
+	// Phase 2: Add rows from right that had no match in left
+	rightSeries := right.Series[on]
+
+	for i := 0; i < rightSeries.Len(); i++ {
+		if rightSeries.IsNull(i) {
+			// For null join values, add a new row
+			// Set nulls for left columns (except join column which is null)
+			for _, col := range left.Columns {
+				if col == on {
+					tempSeries[col] = append(tempSeries[col], nil)
+				} else {
+					tempSeries[col] = append(tempSeries[col], nil)
+				}
+			}
+
+			// Set values for right columns
+			for _, col := range rightColumns {
+				tempSeries[col] = append(tempSeries[col], right.Series[col].GetValue(i))
+			}
+			continue
+		}
+
+		key := rightSeries.GetValue(i)
+
+		// Skip keys that were already matched with left
+		if _, ok := leftMatchedKeys[key]; ok {
+			continue
+		}
+
+		// Add new row for unmatched right row
+		for _, col := range left.Columns {
+			if col == on {
+				tempSeries[col] = append(tempSeries[col], key)
+			} else {
+				tempSeries[col] = append(tempSeries[col], nil)
+			}
+		}
+
+		// Set values for right columns
+		for _, col := range rightColumns {
+			tempSeries[col] = append(tempSeries[col], right.Series[col].GetValue(i))
+		}
+	}
+
+	// Create Series from temporary data
+	totalRows := len(tempSeries[resultColumns[0]])
+
+	for _, col := range resultColumns {
+		// Determine series type from data
+		var seriesType SeriesType = StringType // Default
+
+		if col == on {
+			// For join column, try to use the same type as in original DataFrames
+			if _, ok := left.Series[col].(*IntSeries); ok {
+				seriesType = IntType
+			} else if _, ok := left.Series[col].(*FloatSeries); ok {
+				seriesType = FloatType
+			} else if _, ok := left.Series[col].(*BoolSeries); ok {
+				seriesType = BoolType
+			}
+		} else if _, ok := left.Series[col]; ok {
+			// For left columns, use the same type as in left DataFrame
+			if _, ok := left.Series[col].(*IntSeries); ok {
+				seriesType = IntType
+			} else if _, ok := left.Series[col].(*FloatSeries); ok {
+				seriesType = FloatType
+			} else if _, ok := left.Series[col].(*BoolSeries); ok {
+				seriesType = BoolType
+			}
+		} else {
+			// For right columns, use the same type as in right DataFrame
+			if _, ok := right.Series[col].(*IntSeries); ok {
+				seriesType = IntType
+			} else if _, ok := right.Series[col].(*FloatSeries); ok {
+				seriesType = FloatType
+			} else if _, ok := right.Series[col].(*BoolSeries); ok {
+				seriesType = BoolType
+			}
+		}
+
+		newSeries := CreateSeries(seriesType, col, totalRows)
+		for i, val := range tempSeries[col] {
+			newSeries.SetValue(i, val)
+		}
+
+		result.Series[col] = newSeries
+	}
+
+	return result, nil
 }

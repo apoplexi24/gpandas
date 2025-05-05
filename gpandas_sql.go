@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"gpandas/dataframe"
+	"gpandas/utils/nullable"
 
 	"cloud.google.com/go/bigquery"
 	"google.golang.org/api/iterator"
@@ -106,29 +107,177 @@ func (GoPandas) Read_sql(query string, db_config DbConfig) (*dataframe.DataFrame
 		return nil, fmt.Errorf("error getting columns: %w", err)
 	}
 
-	// Create slices to store the data
-	columnCount := len(columns)
-	data := make([][]any, columnCount)
-	for i := range data {
-		data[i] = make([]any, 0)
+	// Get column types
+	columnTypes, err := results.ColumnTypes()
+	if err != nil {
+		return nil, fmt.Errorf("error getting column types: %w", err)
 	}
 
-	// Create a slice of interfaces to scan into
-	values := make([]any, columnCount)
-	valuePtrs := make([]any, columnCount)
-	for i := range values {
-		valuePtrs[i] = &values[i]
+	// Create DataFrame
+	df := dataframe.NewDataFrame(columns)
+
+	// Create series for each column based on database type
+	seriesMap := make(map[string]dataframe.Series, len(columns))
+
+	for i, colName := range columns {
+		dbType := columnTypes[i].DatabaseTypeName()
+
+		// Determine series type based on database type
+		var seriesType dataframe.SeriesType
+
+		switch dbType {
+		case "INT", "BIGINT", "SMALLINT", "TINYINT":
+			seriesType = dataframe.IntType
+		case "FLOAT", "REAL", "DOUBLE", "DECIMAL", "NUMERIC":
+			seriesType = dataframe.FloatType
+		case "BIT", "BOOLEAN":
+			seriesType = dataframe.BoolType
+		default:
+			// Default to string for other types
+			seriesType = dataframe.StringType
+		}
+
+		// Create empty series (we'll add rows as we scan)
+		series := dataframe.CreateSeries(seriesType, colName, 0)
+		seriesMap[colName] = series
+		df.Series[colName] = series
 	}
 
+	// Scan rows
 	for results.Next() {
-		err := results.Scan(valuePtrs...)
-		if err != nil {
+		// Create a slice of interfaces to scan into
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		// Scan the row into values
+		if err := results.Scan(valuePtrs...); err != nil {
 			return nil, fmt.Errorf("error scanning row: %w", err)
 		}
 
-		// Add values to respective columns
-		for i := range values {
-			data[i] = append(data[i], values[i])
+		// Add a new row to each series
+		for i, colName := range columns {
+			series := df.Series[colName]
+
+			// Create a properly typed value based on the Series type
+			if values[i] == nil {
+				// Add a null value
+				switch series.(type) {
+				case *dataframe.IntSeries:
+					newSeries := dataframe.NewIntSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+					newSeries.SetValue(series.Len(), nil)
+					df.Series[colName] = newSeries
+				case *dataframe.FloatSeries:
+					newSeries := dataframe.NewFloatSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+					newSeries.SetValue(series.Len(), nil)
+					df.Series[colName] = newSeries
+				case *dataframe.StringSeries:
+					newSeries := dataframe.NewStringSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+					newSeries.SetValue(series.Len(), nil)
+					df.Series[colName] = newSeries
+				case *dataframe.BoolSeries:
+					newSeries := dataframe.NewBoolSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+					newSeries.SetValue(series.Len(), nil)
+					df.Series[colName] = newSeries
+				}
+			} else {
+				// Add a non-null value
+				switch series.(type) {
+				case *dataframe.IntSeries:
+					newSeries := dataframe.NewIntSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+
+					// Convert to int64 as needed
+					switch v := values[i].(type) {
+					case int64:
+						newSeries.SetValue(series.Len(), v)
+					case int32:
+						newSeries.SetValue(series.Len(), int64(v))
+					case int:
+						newSeries.SetValue(series.Len(), int64(v))
+					default:
+						// Try to convert to string then int
+						newSeries.SetValue(series.Len(), fmt.Sprintf("%v", v))
+					}
+
+					df.Series[colName] = newSeries
+
+				case *dataframe.FloatSeries:
+					newSeries := dataframe.NewFloatSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+
+					// Convert to float64 as needed
+					switch v := values[i].(type) {
+					case float64:
+						newSeries.SetValue(series.Len(), v)
+					case float32:
+						newSeries.SetValue(series.Len(), float64(v))
+					case int64:
+						newSeries.SetValue(series.Len(), float64(v))
+					case int32:
+						newSeries.SetValue(series.Len(), float64(v))
+					case int:
+						newSeries.SetValue(series.Len(), float64(v))
+					default:
+						// Try to convert to string then float
+						newSeries.SetValue(series.Len(), fmt.Sprintf("%v", v))
+					}
+
+					df.Series[colName] = newSeries
+
+				case *dataframe.StringSeries:
+					newSeries := dataframe.NewStringSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+
+					// Convert anything to string
+					newSeries.SetValue(series.Len(), fmt.Sprintf("%v", values[i]))
+					df.Series[colName] = newSeries
+
+				case *dataframe.BoolSeries:
+					newSeries := dataframe.NewBoolSeries(colName, series.Len()+1)
+					for j := 0; j < series.Len(); j++ {
+						newSeries.SetValue(j, series.GetValue(j))
+					}
+
+					// Convert to bool as needed
+					switch v := values[i].(type) {
+					case bool:
+						newSeries.SetValue(series.Len(), v)
+					case int64:
+						newSeries.SetValue(series.Len(), v != 0)
+					case int32:
+						newSeries.SetValue(series.Len(), v != 0)
+					case int:
+						newSeries.SetValue(series.Len(), v != 0)
+					default:
+						// Try to convert to string then bool
+						newSeries.SetValue(series.Len(), fmt.Sprintf("%v", v))
+					}
+
+					df.Series[colName] = newSeries
+				}
+			}
 		}
 	}
 
@@ -136,10 +285,7 @@ func (GoPandas) Read_sql(query string, db_config DbConfig) (*dataframe.DataFrame
 		return nil, fmt.Errorf("error iterating over rows: %w", err)
 	}
 
-	return &dataframe.DataFrame{
-		Columns: columns,
-		Data:    data,
-	}, nil
+	return df, nil
 }
 
 // QueryBigQuery executes a BigQuery SQL query and returns the results as a DataFrame.
@@ -187,31 +333,42 @@ func (GoPandas) From_gbq(query string, projectID string) (*dataframe.DataFrame, 
 		return nil, fmt.Errorf("query.Read: %v", err)
 	}
 
-	// Read the first row to determine column names
-	var firstRow map[string]bigquery.Value
-	err = it.Next(&firstRow)
-	if err == iterator.Done {
-		return nil, fmt.Errorf("no rows returned")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("iterator.Next: %v", err)
+	// Get schema information to determine column names and types
+	schema := it.Schema
+	if len(schema) == 0 {
+		return nil, fmt.Errorf("no schema information available")
 	}
 
-	// Extract column names from the first row's keys
-	var columns []string
-	for col := range firstRow {
-		columns = append(columns, col)
+	columns := make([]string, len(schema))
+	for i, field := range schema {
+		columns[i] = field.Name
 	}
 
-	// first row in columns row
-	firstDataRow := make([]any, len(columns))
-	for i, col := range columns {
-		firstDataRow[i] = firstRow[col]
+	// Create DataFrame
+	df := dataframe.NewDataFrame(columns)
+
+	// Create series for each column based on BigQuery type
+	for _, field := range schema {
+		var seriesType dataframe.SeriesType
+
+		// Map BigQuery types to Series types
+		switch field.Type {
+		case bigquery.IntegerFieldType:
+			seriesType = dataframe.IntType
+		case bigquery.FloatFieldType, bigquery.NumericFieldType:
+			seriesType = dataframe.FloatType
+		case bigquery.BooleanFieldType:
+			seriesType = dataframe.BoolType
+		default:
+			// Default to string for other types
+			seriesType = dataframe.StringType
+		}
+
+		series := dataframe.CreateSeries(seriesType, field.Name, 0)
+		df.Series[field.Name] = series
 	}
 
-	data := [][]any{firstDataRow}
-
-	// Process actual data here
+	// Process rows
 	for {
 		var row map[string]bigquery.Value
 		err := it.Next(&row)
@@ -222,16 +379,101 @@ func (GoPandas) From_gbq(query string, projectID string) (*dataframe.DataFrame, 
 			return nil, fmt.Errorf("iterator.Next: %v", err)
 		}
 
-		// Build a row in the same column order
-		interfaceRow := make([]any, len(columns))
-		for i, col := range columns {
-			interfaceRow[i] = row[col]
+		// Process each column in the row
+		for _, colName := range columns {
+			value := row[colName]
+			series := df.Series[colName]
+
+			// Resize the series to add a new row
+			switch s := series.(type) {
+			case *dataframe.IntSeries:
+				newSeries := dataframe.NewIntSeries(colName, s.Len()+1)
+				for i := 0; i < s.Len(); i++ {
+					newSeries.SetValue(i, s.GetValue(i))
+				}
+
+				if value == nil {
+					newSeries.SetValue(s.Len(), nil)
+				} else {
+					// Convert to int64 as needed
+					switch v := value.(type) {
+					case int64:
+						newSeries.SetValue(s.Len(), v)
+					case int32:
+						newSeries.SetValue(s.Len(), int64(v))
+					case int:
+						newSeries.SetValue(s.Len(), int64(v))
+					default:
+						// Try to convert
+						newSeries.SetValue(s.Len(), nullable.FromAny(v))
+					}
+				}
+
+				df.Series[colName] = newSeries
+
+			case *dataframe.FloatSeries:
+				newSeries := dataframe.NewFloatSeries(colName, s.Len()+1)
+				for i := 0; i < s.Len(); i++ {
+					newSeries.SetValue(i, s.GetValue(i))
+				}
+
+				if value == nil {
+					newSeries.SetValue(s.Len(), nil)
+				} else {
+					// Convert to float64 as needed
+					switch v := value.(type) {
+					case float64:
+						newSeries.SetValue(s.Len(), v)
+					case float32:
+						newSeries.SetValue(s.Len(), float64(v))
+					case int64:
+						newSeries.SetValue(s.Len(), float64(v))
+					default:
+						// Try to convert
+						newSeries.SetValue(s.Len(), nullable.FromAny(v))
+					}
+				}
+
+				df.Series[colName] = newSeries
+
+			case *dataframe.StringSeries:
+				newSeries := dataframe.NewStringSeries(colName, s.Len()+1)
+				for i := 0; i < s.Len(); i++ {
+					newSeries.SetValue(i, s.GetValue(i))
+				}
+
+				if value == nil {
+					newSeries.SetValue(s.Len(), nil)
+				} else {
+					// Convert to string
+					newSeries.SetValue(s.Len(), fmt.Sprintf("%v", value))
+				}
+
+				df.Series[colName] = newSeries
+
+			case *dataframe.BoolSeries:
+				newSeries := dataframe.NewBoolSeries(colName, s.Len()+1)
+				for i := 0; i < s.Len(); i++ {
+					newSeries.SetValue(i, s.GetValue(i))
+				}
+
+				if value == nil {
+					newSeries.SetValue(s.Len(), nil)
+				} else {
+					// Convert to bool as needed
+					switch v := value.(type) {
+					case bool:
+						newSeries.SetValue(s.Len(), v)
+					default:
+						// Try to convert
+						newSeries.SetValue(s.Len(), nullable.FromAny(v))
+					}
+				}
+
+				df.Series[colName] = newSeries
+			}
 		}
-		data = append(data, interfaceRow)
 	}
 
-	return &dataframe.DataFrame{
-		Columns: columns,
-		Data:    data,
-	}, nil
+	return df, nil
 }

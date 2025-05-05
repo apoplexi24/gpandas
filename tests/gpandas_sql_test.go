@@ -137,13 +137,19 @@ func TestRead_sql(t *testing.T) {
 				}
 
 				// For non-empty result sets, check data consistency
-				if len(df.Data) > 0 {
+				if df.Rows() > 0 {
 					// Check if all columns have the same length
-					firstColLen := len(df.Data[0])
-					for i, col := range df.Data {
-						if len(col) != firstColLen {
-							t.Errorf("column %d has inconsistent length: expected %d, got %d",
-								i, firstColLen, len(col))
+					numRows := df.Rows()
+					for _, col := range df.Columns {
+						series, ok := df.Series[col]
+						if !ok {
+							t.Errorf("column %s not found in Series map", col)
+							continue
+						}
+
+						if series.Len() != numRows {
+							t.Errorf("column %s has inconsistent length: expected %d, got %d",
+								col, numRows, series.Len())
 						}
 					}
 				}
