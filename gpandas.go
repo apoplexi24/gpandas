@@ -1,6 +1,7 @@
 package gpandas
 
 import (
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -134,6 +135,10 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		return nil, errors.New("no headers found in CSV")
 	}
 
+	// Create a context that can be cancelled when an error occurs
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // Ensure context is cancelled when function returns
+
 	// Use a worker pool for dynamic workload distribution
 	type RowData struct {
 		Index int
@@ -141,6 +146,7 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 	}
 	rowChan := make(chan RowData, 100)                 // Buffered channel to hold rows
 	resultChan := make(chan [][]any, runtime.NumCPU()) // Channel to hold columnar data
+	errChan := make(chan error, 1)                     // Channel to communicate errors
 	var wg sync.WaitGroup
 
 	// Start workers for processing rows
@@ -155,59 +161,121 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 				localData[i] = make([]any, 0, 100) // Preallocate some space
 			}
 
-			for row := range rowChan {
-				if len(row.Row) != columnCount {
-					// Handle inconsistent row lengths
-					continue
-				}
-				for j, val := range row.Row {
-					// Convert empty strings to nil for null support
-					if val == "" {
-						localData[j] = append(localData[j], nil)
-					} else {
-						// Store as string values initially
-						localData[j] = append(localData[j], val)
+			for {
+				select {
+				case row, ok := <-rowChan:
+					if !ok {
+						// Channel closed, send local data and exit
+						if len(localData[0]) > 0 {
+							resultChan <- localData
+						}
+						return
 					}
+
+					// Process the row data
+					for j, val := range row.Row {
+						// Convert empty strings to nil for null support
+						if val == "" {
+							localData[j] = append(localData[j], nil)
+						} else {
+							// Store as string values initially
+							localData[j] = append(localData[j], val)
+						}
+					}
+				case <-ctx.Done():
+					// Context cancelled, exit without sending results
+					return
 				}
 			}
-			resultChan <- localData
 		}()
 	}
 
 	// Feed rows to workers
 	go func() {
 		index := 0
+		defer close(rowChan) // Ensure rowChan is closed when this goroutine exits
+
 		for {
-			record, err := reader.Read()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				close(rowChan)
+			select {
+			case <-ctx.Done():
+				// Context cancelled, stop processing
 				return
+			default:
+				record, err := reader.Read()
+				if err == io.EOF {
+					return
+				}
+				if err != nil {
+					// Report error and cancel context to stop all goroutines
+					select {
+					case errChan <- fmt.Errorf("error reading CSV at row %d: %w", index+1, err):
+					default:
+					}
+					cancel()
+					return
+				}
+
+				// Check for inconsistent column counts
+				if len(record) != columnCount {
+					errMsg := fmt.Errorf("inconsistent column count in row %d: expected %d columns, got %d",
+						index+1, columnCount, len(record))
+					select {
+					case errChan <- errMsg:
+					default:
+					}
+					cancel()
+					return
+				}
+
+				rowChan <- RowData{Index: index, Row: record}
+				index++
 			}
-			rowChan <- RowData{Index: index, Row: record}
-			index++
 		}
-		close(rowChan)
 	}()
 
-	// Wait for workers to finish
+	// Set up a goroutine to wait for workers and close result channel
 	go func() {
 		wg.Wait()
 		close(resultChan)
 	}()
 
-	// Combine results into columnar format
+	// Collect results in columnar format
 	combinedData := make([][]any, columnCount)
 	for i := range combinedData {
 		combinedData[i] = make([]any, 0)
 	}
 
-	for result := range resultChan {
-		for j, colData := range result {
-			combinedData[j] = append(combinedData[j], colData...)
+	// Process results and check for errors
+	var csvErr error
+	resultsDone := make(chan struct{})
+
+	go func() {
+		for result := range resultChan {
+			for j, colData := range result {
+				combinedData[j] = append(combinedData[j], colData...)
+			}
 		}
+		close(resultsDone)
+	}()
+
+	// Wait for either an error or all results to be processed
+	select {
+	case csvErr = <-errChan:
+		// Error occurred, cancel context to stop all goroutines
+		cancel()
+		<-resultsDone // Wait for result processing to finish
+	case <-resultsDone:
+		// All results processed, check if there was an error
+		select {
+		case csvErr = <-errChan:
+		default:
+			// No error
+		}
+	}
+
+	// Check if we had an error in processing
+	if csvErr != nil {
+		return nil, csvErr
 	}
 
 	// Create DataFrame and detect column types
