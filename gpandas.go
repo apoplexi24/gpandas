@@ -14,36 +14,6 @@ import (
 
 type GoPandas struct{}
 
-// FloatColumn represents a slice of float64 values.
-type FloatCol []float64
-
-// StringColumn represents a slice of string values.
-type StringCol []string
-
-// IntColumn represents a slice of int64 values.
-type IntCol []int64
-
-// BoolColumn represents a slice of bool values.
-type BoolCol []bool
-
-// Column represents a slice of any type.
-type Column []any
-
-// TypeColumn represents a slice of a comparable type T.
-type TypeColumn[T comparable] []T
-
-func FloatColumn(col []any) ([]float64, error) {
-	floatCol := make(FloatCol, len(col))
-	for i, v := range col {
-		if val, ok := v.(float64); ok {
-			floatCol[i] = val
-		} else {
-			return nil, fmt.Errorf("invalid type for column %d: expected float64, got %T", i, v)
-		}
-	}
-	return floatCol, nil
-}
-
 // DataFrame creates a new DataFrame from the provided columns, data, and column types.
 //
 // It validates the input parameters to ensure data consistency and proper type definitions.
