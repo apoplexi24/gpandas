@@ -186,107 +186,148 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 	return nil
 }
 
-// String returns a string representation of the DataFrame in a formatted table.
-//
-// The method creates a visually appealing ASCII table representation of the DataFrame
-// with the following features:
-//   - Column headers are displayed in the first row
-//   - Data is aligned to the left within columns
-//   - Table borders and separators use ASCII characters
-//   - Each cell's content is automatically converted to string representation
-//   - A summary line showing dimensions ([rows x columns]) is appended
-//
-// The table format follows this pattern:
-//
-//	+-----+-----+-----+
-//	| Col1| Col2| Col3|
-//	+-----+-----+-----+
-//	| val1| val2| val3|
-//	| val4| val5| val6|
-//	+-----+-----+-----+
-//	[2 rows x 3 columns]
-//
-// Parameters:
-//   - None (receiver method on DataFrame)
-//
-// Returns:
-//   - string: The formatted table representation of the DataFrame
-//
-// Example:
-//
-//	df := &DataFrame{
-//	    Columns: []string{"A", "B"},
-//	    Data:    [][]any{{1, 2}, {3, 4}},
-//	}
-//	fmt.Println(df.String())
-//
-// Note:
-//   - All values are converted to strings using fmt.Sprintf("%v", val)
-//   - The table is rendered using the github.com/olekukonko/tablewriter package
-func (df *DataFrame) String() string {
-	if df == nil {
-		return "DataFrame is nil"
+// DataFrameOption is a function type that modifies DataFrame operation settings.
+type DataFrameOption func(*dataFrameOptions)
+
+// dataFrameOptions holds all configurable settings for DataFrame operations.
+type dataFrameOptions struct {
+	// CSV options
+	csvSeparator rune
+	csvQuote     rune
+	csvEscape    rune
+	csvHeader    bool
+
+	// Merge options
+	mergeLeftOn  string
+	mergeRightOn string
+	mergeSuffix  map[string]string
+
+	// Display options
+	maxRows     int
+	maxColumns  int
+	nullDisplay string
+
+	// Filtering and sorting
+	filterFunc    func(row int) bool
+	sortColumns   []string
+	sortAscending []bool
+}
+
+// defaultDataFrameOptions returns the default options for DataFrame operations.
+func defaultDataFrameOptions() *dataFrameOptions {
+	return &dataFrameOptions{
+		csvSeparator:  ',',
+		csvQuote:      '"',
+		csvEscape:     '\\',
+		csvHeader:     true,
+		maxRows:       10,
+		maxColumns:    0, // 0 means no limit
+		nullDisplay:   "NULL",
+		mergeLeftOn:   "",
+		mergeRightOn:  "",
+		mergeSuffix:   map[string]string{"_x": "_y"},
+		filterFunc:    nil,
+		sortColumns:   nil,
+		sortAscending: nil,
 	}
+}
 
-	var buf bytes.Buffer
-	table := tablewriter.NewWriter(&buf)
-
-	// Set table properties
-	table.SetAutoWrapText(false)
-	table.SetAutoFormatHeaders(false)
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetCenterSeparator("+")
-	table.SetColumnSeparator("|")
-	table.SetRowSeparator("-")
-	table.SetHeaderLine(true)
-	table.SetBorder(true)
-
-	// Set headers using the DataFrame's Columns
-	table.SetHeader(df.Columns)
-
-	// Determine number of rows and max rows to display
-	numRows := df.Rows()
-	displayRows := numRows
-	if numRows > 10 {
-		displayRows = 10
+// WithCSVSeparator sets the separator character for CSV output.
+func WithCSVSeparator(sep rune) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.csvSeparator = sep
 	}
+}
 
-	// For each row, collect data from all series
-	for i := 0; i < displayRows; i++ {
-		row := make([]string, len(df.Columns))
-		for j, colName := range df.Columns {
-			series, ok := df.Series[colName]
-			if !ok {
-				row[j] = "N/A"
-				continue
-			}
+// WithCSVQuote sets the quote character for CSV output.
+func WithCSVQuote(quote rune) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.csvQuote = quote
+	}
+}
 
-			if series.IsNull(i) {
-				row[j] = "NULL"
-			} else {
-				row[j] = fmt.Sprintf("%v", series.GetValue(i))
-			}
+// WithCSVEscape sets the escape character for CSV output.
+func WithCSVEscape(escape rune) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.csvEscape = escape
+	}
+}
+
+// WithCSVHeader specifies whether to include headers in CSV output.
+func WithCSVHeader(includeHeader bool) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.csvHeader = includeHeader
+	}
+}
+
+// WithMaxRows sets the maximum rows to display.
+func WithMaxRows(maxRows int) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		if maxRows >= 0 {
+			o.maxRows = maxRows
 		}
-		table.Append(row)
 	}
+}
 
-	// Add row count information.
-	shape := fmt.Sprintf("[%d rows x %d columns]", numRows, len(df.Columns))
-	if numRows > 10 {
-		shape = fmt.Sprintf("Showing first 10 rows of %d rows x %d columns", numRows, len(df.Columns))
+// WithMaxColumns sets the maximum columns to display.
+func WithMaxColumns(maxColumns int) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		if maxColumns >= 0 {
+			o.maxColumns = maxColumns
+		}
 	}
+}
 
-	// Render the table and return the string representation
-	table.Render()
-	return buf.String() + shape + "\n"
+// WithNullDisplay sets how NULL values are displayed.
+func WithNullDisplay(display string) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.nullDisplay = display
+	}
+}
+
+// WithMergeOn sets the columns to merge on when the columns have the same name in both DataFrames.
+func WithMergeOn(on string) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.mergeLeftOn = on
+		o.mergeRightOn = on
+	}
+}
+
+// WithMergeColumns sets different column names to merge on for left and right DataFrames.
+func WithMergeColumns(leftOn, rightOn string) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.mergeLeftOn = leftOn
+		o.mergeRightOn = rightOn
+	}
+}
+
+// WithMergeSuffix sets the suffixes to use for duplicate column names in a merge.
+func WithMergeSuffix(leftSuffix, rightSuffix string) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.mergeSuffix = map[string]string{leftSuffix: rightSuffix}
+	}
+}
+
+// WithFilter sets a filter function that determines which rows to include.
+func WithFilter(filterFunc func(row int) bool) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.filterFunc = filterFunc
+	}
+}
+
+// WithSort sets columns to sort by and whether to sort ascending or descending.
+func WithSort(columns []string, ascending []bool) DataFrameOption {
+	return func(o *dataFrameOptions) {
+		o.sortColumns = columns
+		o.sortAscending = ascending
+	}
 }
 
 // ToCSV converts the DataFrame to a CSV string representation or writes it to a file.
 //
 // Parameters:
 //   - filepath: file path to write the CSV to (empty string to return as string)
-//   - separator: optional separator for the CSV (defaults to comma)
+//   - options: Optional functional parameters to customize the CSV output
 //
 // Returns:
 //   - string: CSV representation of the DataFrame if filepath is empty
@@ -299,41 +340,46 @@ func (df *DataFrame) String() string {
 //	// Get CSV as string with default comma separator
 //	csv, err := df.ToCSV("")
 //
-//	// Get CSV as string with custom separator
-//	csv, err := df.ToCSV("", ";")
+//	// Get CSV with custom separator
+//	csv, err := df.ToCSV("", WithCSVSeparator(';'))
 //
-//	// Write to file with default comma separator
-//	_, err := df.ToCSV("path/to/output.csv")
-//
-//	// Write to file with custom separator
-//	_, err := df.ToCSV("path/to/output.csv", ";")
-func (df *DataFrame) ToCSV(filepath string, separator ...string) (string, error) {
+//	// Write to file with custom settings
+//	_, err := df.ToCSV("path/to/output.csv", WithCSVSeparator(';'), WithCSVHeader(false))
+func (df *DataFrame) ToCSV(filepath string, opts ...DataFrameOption) (string, error) {
 	if df == nil {
 		return "", errors.New("DataFrame is nil")
 	}
 
-	sep := ","
-	if len(separator) > 0 && separator[0] != "" {
-		sep = separator[0]
+	// Apply options
+	options := defaultDataFrameOptions()
+	for _, opt := range opts {
+		opt(options)
 	}
 
 	var buf bytes.Buffer
 
-	// Write headers
-	for i, col := range df.Columns {
-		if i > 0 {
-			buf.WriteString(sep)
+	// Write headers if enabled
+	if options.csvHeader {
+		for i, col := range df.Columns {
+			if i > 0 {
+				buf.WriteRune(options.csvSeparator)
+			}
+			buf.WriteString(col)
 		}
-		buf.WriteString(col)
+		buf.WriteString("\n")
 	}
-	buf.WriteString("\n")
 
 	// Write data
 	rowCount := df.Rows()
 	for i := 0; i < rowCount; i++ {
+		// Apply filter if set
+		if options.filterFunc != nil && !options.filterFunc(i) {
+			continue
+		}
+
 		for j, colName := range df.Columns {
 			if j > 0 {
-				buf.WriteString(sep)
+				buf.WriteRune(options.csvSeparator)
 			}
 
 			series, ok := df.Series[colName]
@@ -359,7 +405,106 @@ func (df *DataFrame) ToCSV(filepath string, separator ...string) (string, error)
 	return buf.String(), nil
 }
 
-// get returns the value at a specific row and column.
+// String returns a string representation of the DataFrame in a formatted table.
+//
+// The method creates a visually appealing ASCII table representation of the DataFrame
+// with the following features:
+//   - Column headers are displayed in the first row
+//   - Data is aligned to the left within columns
+//   - Table borders and separators use ASCII characters
+//   - Each cell's content is automatically converted to string representation
+//   - A summary line showing dimensions ([rows x columns]) is appended
+//
+// Parameters:
+//   - opts: Optional functional parameters to customize the output
+//
+// Returns:
+//   - string: The formatted table representation of the DataFrame
+//
+// Example:
+//
+//	// Basic string representation
+//	fmt.Println(df.String())
+//
+//	// Custom string representation
+//	fmt.Println(df.String(WithMaxRows(5), WithNullDisplay("NA")))
+func (df *DataFrame) String(opts ...DataFrameOption) string {
+	if df == nil {
+		return "DataFrame is nil"
+	}
+
+	// Apply options
+	options := defaultDataFrameOptions()
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	var buf bytes.Buffer
+	table := tablewriter.NewWriter(&buf)
+
+	// Set table properties
+	table.SetAutoWrapText(false)
+	table.SetAutoFormatHeaders(false)
+	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+	table.SetCenterSeparator("+")
+	table.SetColumnSeparator("|")
+	table.SetRowSeparator("-")
+	table.SetHeaderLine(true)
+	table.SetBorder(true)
+
+	// Apply column limits if necessary
+	displayColumns := df.Columns
+	if options.maxColumns > 0 && len(df.Columns) > options.maxColumns {
+		displayColumns = df.Columns[:options.maxColumns]
+	}
+
+	// Set headers using the DataFrame's Columns
+	table.SetHeader(displayColumns)
+
+	// Determine number of rows and max rows to display
+	numRows := df.Rows()
+	displayRows := numRows
+	if options.maxRows > 0 && numRows > options.maxRows {
+		displayRows = options.maxRows
+	}
+
+	// For each row, collect data from all series
+	for i := 0; i < displayRows; i++ {
+		// Apply filter if set
+		if options.filterFunc != nil && !options.filterFunc(i) {
+			continue
+		}
+
+		row := make([]string, len(displayColumns))
+		for j, colName := range displayColumns {
+			series, ok := df.Series[colName]
+			if !ok {
+				row[j] = "N/A"
+				continue
+			}
+
+			if series.IsNull(i) {
+				row[j] = options.nullDisplay
+			} else {
+				row[j] = fmt.Sprintf("%v", series.GetValue(i))
+			}
+		}
+		table.Append(row)
+	}
+
+	// Add row count information.
+	shape := fmt.Sprintf("[%d rows x %d columns]", numRows, len(df.Columns))
+	if numRows > displayRows {
+		shape = fmt.Sprintf("Showing first %d rows of %d rows x %d columns", displayRows, numRows, len(df.Columns))
+	}
+
+	// Render the table and return the string representation
+	table.Render()
+	return buf.String() + shape + "\n"
+}
+
+// Get returns the value at a specific row and column.
 func (df *DataFrame) Get(row int, col string) (any, error) {
 	if df == nil {
 		return nil, errors.New("DataFrame is nil")
@@ -381,7 +526,7 @@ func (df *DataFrame) Get(row int, col string) (any, error) {
 	return series.GetValue(row), nil
 }
 
-// set sets the value at a specific row and column.
+// Set sets the value at a specific row and column.
 func (df *DataFrame) Set(row int, col string, value any) error {
 	if df == nil {
 		return errors.New("DataFrame is nil")
@@ -529,4 +674,67 @@ func (df *DataFrame) DropNA() *DataFrame {
 	}
 
 	return newDf
+}
+
+// MergeWithOptions combines two DataFrames based on a common column and specified merge strategy.
+// This is a new function that uses the functional options pattern and wraps the original Merge method.
+//
+// Parameters:
+//   - right: The right DataFrame to merge with this DataFrame
+//   - how: The merge strategy to use (inner, left, right, full)
+//   - opts: Optional functional parameters to customize the merge
+//
+// Returns:
+//   - *DataFrame: A new DataFrame containing the merged data
+//   - error: An error if the merge fails
+//
+// Example:
+//
+//	// Basic merge on "ID" column
+//	result, err := df1.MergeWithOptions(df2, dataframe.InnerMerge, WithMergeOn("ID"))
+//
+//	// Merge with different column names
+//	result, err := df1.MergeWithOptions(df2, dataframe.LeftMerge, WithMergeColumns("LeftID", "RightID"))
+//
+//	// Merge with custom suffixes for duplicate columns
+//	result, err := df1.MergeWithOptions(df2, dataframe.FullMerge, WithMergeOn("ID"), WithMergeSuffix("_left", "_right"))
+func (df *DataFrame) MergeWithOptions(right *DataFrame, how MergeHow, opts ...DataFrameOption) (*DataFrame, error) {
+	if df == nil {
+		return nil, errors.New("left DataFrame is nil")
+	}
+	if right == nil {
+		return nil, errors.New("right DataFrame is nil")
+	}
+
+	// Apply options
+	options := defaultDataFrameOptions()
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	// If options specify merge columns, use them
+	if options.mergeLeftOn != "" && options.mergeRightOn != "" {
+		// In case different column names are specified, we need to create a temporary right DataFrame
+		// with the right column renamed to match the left column name
+		if options.mergeLeftOn != options.mergeRightOn {
+			// Create a copy of the right DataFrame
+			tempRight := right.Copy()
+
+			// Rename the right column to match the left column
+			renameMap := map[string]string{options.mergeRightOn: options.mergeLeftOn}
+			if err := tempRight.Rename(renameMap); err != nil {
+				return nil, fmt.Errorf("failed to rename merge column: %w", err)
+			}
+
+			// Call the original implementation with the renamed column
+			// The signature from merge.go is: Merge(other *DataFrame, on string, how MergeHow)
+			return df.Merge(tempRight, options.mergeLeftOn, how)
+		}
+
+		// If the column names are the same, just use the standard implementation
+		return df.Merge(right, options.mergeLeftOn, how)
+	}
+
+	// No merge columns specified in options, this is an error
+	return nil, errors.New("merge columns must be specified using WithMergeOn or WithMergeColumns")
 }

@@ -13,7 +13,91 @@ import (
 	"sync"
 )
 
+// GoPandas is the main entry point for data manipulation functions.
 type GoPandas struct{}
+
+// Option is a function type that modifies GPandas operation settings.
+type Option func(*options)
+
+// options holds all configurable settings for GPandas operations.
+type options struct {
+	// CSV Reader options
+	csvSeparator   rune
+	csvComment     rune
+	csvHeaderRow   bool
+	csvAutoType    bool
+	csvWorkerCount int
+
+	// DataFrame options
+	nullValue      any
+	defaultContext context.Context
+}
+
+// defaultOptions returns the default options.
+func defaultOptions() *options {
+	return &options{
+		csvSeparator:   ',',
+		csvComment:     '#',
+		csvHeaderRow:   true,
+		csvAutoType:    false,
+		csvWorkerCount: runtime.NumCPU(),
+		nullValue:      nil,
+		defaultContext: context.Background(),
+	}
+}
+
+// WithCSVSeparator sets the separator character for CSV operations.
+func WithCSVSeparator(sep rune) Option {
+	return func(o *options) {
+		o.csvSeparator = sep
+	}
+}
+
+// WithCSVComment sets the comment character for CSV operations.
+func WithCSVComment(comment rune) Option {
+	return func(o *options) {
+		o.csvComment = comment
+	}
+}
+
+// WithCSVHeaderRow specifies whether the CSV file has a header row.
+func WithCSVHeaderRow(hasHeader bool) Option {
+	return func(o *options) {
+		o.csvHeaderRow = hasHeader
+	}
+}
+
+// WithCSVAutoType enables automatic type detection for CSV data.
+func WithCSVAutoType(autoType bool) Option {
+	return func(o *options) {
+		o.csvAutoType = autoType
+	}
+}
+
+// WithWorkerCount sets the number of worker goroutines for parallel operations.
+func WithWorkerCount(count int) Option {
+	return func(o *options) {
+		if count > 0 {
+			o.csvWorkerCount = count
+		}
+	}
+}
+
+// WithNullValue sets the default value used to represent nulls.
+func WithNullValue(value any) Option {
+	return func(o *options) {
+		o.nullValue = value
+	}
+}
+
+// WithContext sets a custom context for operations.
+func WithContext(ctx context.Context) Option {
+	return func(o *options) {
+		if ctx != nil {
+			o.defaultContext = ctx
+		}
+	}
+}
 
 // DataFrame creates a new DataFrame from the provided columns, data, and column types.
 //
@@ -35,11 +119,18 @@ type GoPandas struct{}
 //	columns: A slice of strings representing column names
 //	data: A slice of []any containing the actual data
 //	columns_types: A map defining the expected type for each column
+//	opts: Optional functional parameters to customize the operation
 //
 // Returns:
 //
 //	A pointer to a DataFrame containing the processed data, or an error if validation fails
-func (GoPandas) DataFrame(columns []string, data [][]any, columns_types map[string]dataframe.SeriesType) (*dataframe.DataFrame, error) {
+func (GoPandas) DataFrame(columns []string, data [][]any, columns_types map[string]dataframe.SeriesType, opts ...Option) (*dataframe.DataFrame, error) {
+	// Apply options
+	options := defaultOptions()
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	// Validate inputs
 	if columns_types == nil {
 		return nil, errors.New("columns_types map is required to assert column types")
@@ -104,18 +195,21 @@ func (GoPandas) DataFrame(columns []string, data [][]any, columns_types map[stri
 //
 // If the number of columns in any row is inconsistent with the header, an error is returned.
 //
-// The function also creates a map of column types, defaulting to StringCol for all columns.
-//
-// Finally, it calls the DataFrame constructor to create and return a DataFrame containing the data from the CSV file.
-//
 // Parameters:
 //
 //	filepath: A string representing the path to the CSV file to be read.
+//	opts: Optional functional parameters to customize the CSV reading behavior.
 //
 // Returns:
 //
 //	A pointer to a DataFrame containing the data from the CSV file, or an error if the operation fails.
-func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
+func (gp GoPandas) Read_csv(filepath string, opts ...Option) (*dataframe.DataFrame, error) {
+	// Apply options
+	options := defaultOptions()
+	for _, opt := range opts {
+		opt(options)
+	}
+
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -123,6 +217,8 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
+	reader.Comma = options.csvSeparator
+	reader.Comment = options.csvComment
 
 	// Read header
 	headers, err := reader.Read()
@@ -136,7 +232,7 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 	}
 
 	// Create a context that can be cancelled when an error occurs
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(options.defaultContext)
 	defer cancel() // Ensure context is cancelled when function returns
 
 	// Use a worker pool for dynamic workload distribution
@@ -144,13 +240,13 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		Index int
 		Row   []string
 	}
-	rowChan := make(chan RowData, 100)                 // Buffered channel to hold rows
-	resultChan := make(chan [][]any, runtime.NumCPU()) // Channel to hold columnar data
-	errChan := make(chan error, 1)                     // Channel to communicate errors
+	rowChan := make(chan RowData, 100)                       // Buffered channel to hold rows
+	resultChan := make(chan [][]any, options.csvWorkerCount) // Channel to hold columnar data
+	errChan := make(chan error, 1)                           // Channel to communicate errors
 	var wg sync.WaitGroup
 
 	// Start workers for processing rows
-	for i := 0; i < runtime.NumCPU(); i++ {
+	for i := 0; i < options.csvWorkerCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -288,6 +384,11 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		if err := df.AddSeries(header, series); err != nil {
 			return nil, fmt.Errorf("error adding series for column %s: %w", header, err)
 		}
+	}
+
+	// Apply auto-typing if enabled
+	if options.csvAutoType {
+		df = gp.AutoType(df)
 	}
 
 	return df, nil

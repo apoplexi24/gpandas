@@ -703,7 +703,7 @@ func TestDataFrameToCSV(t *testing.T) {
 			var err error
 
 			if test.separator != "" {
-				result, err = test.df.ToCSV(test.filepath, test.separator)
+				result, err = test.df.ToCSV(test.filepath, dataframe.WithCSVSeparator(rune(test.separator[0])))
 			} else {
 				result, err = test.df.ToCSV(test.filepath)
 			}
@@ -774,4 +774,171 @@ func TestDataFrameToCSV(t *testing.T) {
 			t.Errorf("file content mismatch\nexpected:\n%s\ngot:\n%s", expected, string(content))
 		}
 	})
+}
+
+// TestDataFrameMergeWithOptions tests the DataFrame.MergeWithOptions method which combines two DataFrames
+// using the functional options pattern.
+//
+// The test suite covers the following scenarios:
+//
+// 1. Basic Merge with WithMergeOn:
+//   - Tests basic inner join functionality using WithMergeOn option
+//   - Verifies correct column merging with the same column name
+//
+// 2. Merge with Different Column Names:
+//   - Tests merging DataFrames with different key column names using WithMergeColumns
+//   - Verifies correct column alignment based on values, not names
+//
+// 3. Merge with Custom Suffixes:
+//   - Tests handling of duplicate column names with WithMergeSuffix
+//   - Verifies that column name conflicts are properly resolved
+//
+// 4. Error Cases:
+//   - Tests nil DataFrame handling
+//   - Tests missing merge options
+func TestDataFrameMergeWithOptions(t *testing.T) {
+	tests := []struct {
+		name        string
+		df1         *dataframe.DataFrame
+		df2         *dataframe.DataFrame
+		how         dataframe.MergeHow
+		opts        []dataframe.DataFrameOption
+		expected    *dataframe.DataFrame
+		expectError bool
+	}{
+		{
+			name: "basic merge with WithMergeOn",
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", "Charlie"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 4})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, 35})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
+			how:  dataframe.InnerMerge,
+			opts: []dataframe.DataFrameOption{dataframe.WithMergeOn("ID")},
+			expected: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob"})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
+			expectError: false,
+		},
+		{
+			name: "merge with different column names",
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"UserID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("UserID", []any{1, 2, 3})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob", "Charlie"})
+				df.AddSeries("UserID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"PersonID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("PersonID", []any{1, 2, 4})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, 35})
+				df.AddSeries("PersonID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
+			how:  dataframe.InnerMerge,
+			opts: []dataframe.DataFrameOption{dataframe.WithMergeColumns("UserID", "PersonID")},
+			expected: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"UserID", "Name", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("UserID", []any{1, 2})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob"})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30})
+				df.AddSeries("UserID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
+			expectError: false,
+		},
+		{
+			name: "missing merge options",
+			df1: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Name"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2})
+				nameSeries := dataframe.CreateSeriesFromData("Name", []any{"Alice", "Bob"})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Name", nameSeries)
+				return df
+			}(),
+			df2: func() *dataframe.DataFrame {
+				df := dataframe.NewDataFrame([]string{"ID", "Age"})
+				idSeries := dataframe.CreateSeriesFromData("ID", []any{1, 2, 3})
+				ageSeries := dataframe.CreateSeriesFromData("Age", []any{25, 30, 35})
+				df.AddSeries("ID", idSeries)
+				df.AddSeries("Age", ageSeries)
+				return df
+			}(),
+			how:         dataframe.InnerMerge,
+			opts:        []dataframe.DataFrameOption{},
+			expectError: true,
+		},
+		{
+			name:        "nil dataframe error",
+			df1:         nil,
+			df2:         &dataframe.DataFrame{},
+			how:         dataframe.InnerMerge,
+			opts:        []dataframe.DataFrameOption{dataframe.WithMergeOn("ID")},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := test.df1.MergeWithOptions(test.df2, test.how, test.opts...)
+
+			// Check error cases
+			if test.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			// Check columns match
+			if !strSliceEqual(result.Columns, test.expected.Columns) {
+				t.Errorf("columns mismatch\nexpected: %v\ngot: %v", test.expected.Columns, result.Columns)
+			}
+
+			// Check data matches
+			if result.Rows() != test.expected.Rows() {
+				t.Errorf("data length mismatch\nexpected: %d\ngot: %d", test.expected.Rows(), result.Rows())
+				return
+			}
+
+			// Compare each value in each column
+			for _, col := range result.Columns {
+				for i := 0; i < result.Rows(); i++ {
+					expectedVal, _ := test.expected.Get(i, col)
+					actualVal, _ := result.Get(i, col)
+					if !reflect.DeepEqual(expectedVal, actualVal) {
+						t.Errorf("value mismatch at row %d, column %s\nexpected: %v\ngot: %v", i, col, expectedVal, actualVal)
+					}
+				}
+			}
+		})
+	}
 }

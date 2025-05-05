@@ -8,7 +8,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func main() {
+func funcname() {
 	envFile, _ := godotenv.Read(".env")
 	table_id := envFile["TABLEID"]
 	start := time.Now()

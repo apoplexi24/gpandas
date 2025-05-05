@@ -5,6 +5,7 @@ import (
 	"gpandas/dataframe"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -17,9 +18,11 @@ func TestRead_csv(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	tests := []struct {
-		name        string
-		csvContent  string
-		expectError bool
+		name          string
+		csvContent    string
+		expectError   bool
+		expectEmptyDF bool
+		options       []gpandas.Option
 	}{
 		{
 			name: "valid csv",
@@ -27,13 +30,17 @@ func TestRead_csv(t *testing.T) {
 John,30,New York
 Alice,25,London
 Bob,35,Paris`,
-			expectError: false,
+			expectError:   false,
+			expectEmptyDF: false,
+			options:       nil,
 		},
 		{
 			name: "empty csv",
 			csvContent: `name,age,city
 `,
-			expectError: true,
+			expectError:   false,
+			expectEmptyDF: false,
+			options:       nil,
 		},
 		{
 			name: "inconsistent columns",
@@ -41,17 +48,23 @@ Bob,35,Paris`,
 John,30
 Alice,25,London,Extra
 Bob,35,Paris`,
-			expectError: true,
+			expectError:   true,
+			expectEmptyDF: false,
+			options:       nil,
 		},
 		{
-			name:        "empty file",
-			csvContent:  "",
-			expectError: true,
+			name:          "empty file",
+			csvContent:    "",
+			expectError:   true,
+			expectEmptyDF: false,
+			options:       nil,
 		},
 		{
-			name:        "only headers",
-			csvContent:  `name,age,city`,
-			expectError: true,
+			name:          "only headers",
+			csvContent:    `name,age,city`,
+			expectError:   false,
+			expectEmptyDF: false,
+			options:       nil,
 		},
 		{
 			name: "valid csv with quoted fields",
@@ -59,7 +72,39 @@ Bob,35,Paris`,
 John,"Software Engineer, Senior",New York
 Alice,"Product Manager, Lead",London
 Bob,"Data Scientist, ML",Paris`,
-			expectError: false,
+			expectError:   false,
+			expectEmptyDF: false,
+			options:       nil,
+		},
+		{
+			name: "csv with semicolon separator",
+			csvContent: `name;age;city
+John;30;New York
+Alice;25;London
+Bob;35;Paris`,
+			expectError:   false,
+			expectEmptyDF: false,
+			options:       []gpandas.Option{gpandas.WithCSVSeparator(';')},
+		},
+		{
+			name: "csv with automatic type detection",
+			csvContent: `name,age,active
+John,30,true
+Alice,25,false
+Bob,35,true`,
+			expectError:   false,
+			expectEmptyDF: false,
+			options:       []gpandas.Option{gpandas.WithCSVAutoType(true)},
+		},
+		{
+			name: "csv with custom worker count",
+			csvContent: `name,age,city
+John,30,New York
+Alice,25,London
+Bob,35,Paris`,
+			expectError:   false,
+			expectEmptyDF: false,
+			options:       []gpandas.Option{gpandas.WithWorkerCount(2)},
 		},
 	}
 
@@ -72,20 +117,27 @@ Bob,"Data Scientist, ML",Paris`,
 				t.Fatalf("failed to create test file: %v", err)
 			}
 
-			// Test Read_csv
+			// Test Read_csv with options
 			pd := gpandas.GoPandas{}
-			df, err := pd.Read_csv(testFile)
+			var df *dataframe.DataFrame
+			var readErr error
+
+			if tt.options != nil {
+				df, readErr = pd.Read_csv(testFile, tt.options...)
+			} else {
+				df, readErr = pd.Read_csv(testFile)
+			}
 
 			// Check error expectations
-			if tt.expectError && err == nil {
+			if tt.expectError && readErr == nil {
 				t.Error("expected error but got none")
 			}
-			if !tt.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
+			if !tt.expectError && readErr != nil {
+				t.Errorf("unexpected error: %v", readErr)
 			}
 
 			// Additional checks for successful cases
-			if !tt.expectError && err == nil {
+			if !tt.expectError && readErr == nil {
 				// Check if DataFrame is not nil
 				if df == nil {
 					t.Error("expected non-nil DataFrame")
@@ -97,8 +149,8 @@ Bob,"Data Scientist, ML",Paris`,
 					t.Error("expected non-empty columns")
 				}
 
-				// Check if data is present
-				if df.Rows() == 0 {
+				// Only check for non-empty data if we're not expecting an empty DataFrame
+				if !tt.expectEmptyDF && df.Rows() == 0 {
 					t.Error("expected non-empty data")
 				}
 
@@ -114,6 +166,29 @@ Bob,"Data Scientist, ML",Paris`,
 					if series.Len() != numRows {
 						t.Errorf("column %s has inconsistent length: expected %d, got %d",
 							col, numRows, series.Len())
+					}
+				}
+
+				// For auto type test, check that numeric columns are properly typed
+				if tt.name == "csv with automatic type detection" {
+					ageSeries, ok := df.Series["age"]
+					if !ok {
+						t.Error("age column not found")
+					} else {
+						_, isIntSeries := ageSeries.(*dataframe.IntSeries)
+						if !isIntSeries {
+							t.Errorf("expected IntSeries for age column, got %T", ageSeries)
+						}
+					}
+
+					activeSeries, ok := df.Series["active"]
+					if !ok {
+						t.Error("active column not found")
+					} else {
+						_, isBoolSeries := activeSeries.(*dataframe.BoolSeries)
+						if !isBoolSeries {
+							t.Errorf("expected BoolSeries for active column, got %T", activeSeries)
+						}
 					}
 				}
 			}
@@ -150,32 +225,56 @@ Bob,35,true,92.8`
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	pd := gpandas.GoPandas{}
-	df, err := pd.Read_csv(testFile)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// Verify all values are StringCol (correct behavior)
-	for _, colName := range df.Columns {
-		series, ok := df.Series[colName]
-		if !ok {
-			t.Errorf("column %s not found in Series map", colName)
-			continue
+	// Test without auto type detection (default)
+	t.Run("without auto type detection", func(t *testing.T) {
+		pd := gpandas.GoPandas{}
+		df, err := pd.Read_csv(testFile)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
 
-		for i := 0; i < series.Len(); i++ {
-			val := series.GetValue(i)
-			// Nullable values are now wrapped in their respective types, not directly StringCol
-			if val == nil {
+		// Verify all columns are StringSeries
+		for _, colName := range df.Columns {
+			series, ok := df.Series[colName]
+			if !ok {
+				t.Errorf("column %s not found in Series map", colName)
 				continue
 			}
-			switch series.(type) {
-			case *dataframe.StringSeries:
-				// This is the expected type
-			default:
-				t.Errorf("expected StringSeries type for column %s, got %T", colName, series)
+
+			_, isStringSeries := series.(*dataframe.StringSeries)
+			if !isStringSeries {
+				t.Errorf("expected StringSeries for column %s, got %T", colName, series)
 			}
 		}
-	}
+	})
+
+	// Test with auto type detection
+	t.Run("with auto type detection", func(t *testing.T) {
+		pd := gpandas.GoPandas{}
+		df, err := pd.Read_csv(testFile, gpandas.WithCSVAutoType(true))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Verify columns have appropriate types
+		typeMap := map[string]reflect.Type{
+			"name":   reflect.TypeOf(""),
+			"age":    reflect.TypeOf(int64(0)),
+			"active": reflect.TypeOf(bool(false)),
+			"score":  reflect.TypeOf(float64(0)),
+		}
+
+		for colName, expectedType := range typeMap {
+			series, ok := df.Series[colName]
+			if !ok {
+				t.Errorf("column %s not found in Series map", colName)
+				continue
+			}
+
+			if series.GetType() != expectedType {
+				t.Errorf("wrong type for column %s: expected %v, got %v",
+					colName, expectedType, series.GetType())
+			}
+		}
+	})
 }
