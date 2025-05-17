@@ -99,6 +99,52 @@ func WithContext(ctx context.Context) Option {
 	}
 }
 
+// Apply applies a function to each row or column of the DataFrame.
+//
+// This is a convenience method that forwards the call to the DataFrame's Apply method.
+//
+// Parameters:
+//   - df: The DataFrame to apply the function to
+//   - fn: Function to apply to each row or column
+//   - opts: Optional functional parameters to customize the operation
+//
+// Returns:
+//   - A new Series containing the result of the apply operation
+//   - An error if the operation fails
+//
+// Example:
+//
+//	// Define a function to calculate mean of a column
+//	func calculateMean(s dataframe.Series) any {
+//	    sum := 0.0
+//	    count := 0
+//	    for i := 0; i < s.Len(); i++ {
+//	        if !s.IsNull(i) {
+//	            switch v := s.GetValue(i).(type) {
+//	            case int:
+//	                sum += float64(v)
+//	                count++
+//	            case float64:
+//	                sum += v
+//	                count++
+//	            }
+//	        }
+//	    }
+//	    if count > 0 {
+//	        return sum / float64(count)
+//	    }
+//	    return 0.0
+//	}
+//
+//	// Calculate mean of each column
+//	result, err := gp.Apply(df, calculateMean, dataframe.WithResultType(dataframe.FloatType))
+func (GoPandas) Apply(df *dataframe.DataFrame, fn interface{}, opts ...dataframe.ApplyOption) (dataframe.Series, error) {
+	if df == nil {
+		return nil, errors.New("DataFrame is nil")
+	}
+	return df.Apply(fn, opts...)
+}
+
 // DataFrame creates a new DataFrame from the provided columns, data, and column types.
 //
 // It validates the input parameters to ensure data consistency and proper type definitions.
