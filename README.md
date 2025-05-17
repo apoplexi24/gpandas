@@ -81,6 +81,20 @@ The project is organized into the following directories and files:
 
 ## Recent Updates
 
+### Apply Functionality
+
+GPandas now features powerful apply operations inspired by pandas' apply method:
+
+- **Function Application**: 
+  - Apply custom functions to rows or columns of a DataFrame
+  - Support for both predefined and anonymous functions
+  - Column-wise (axis=0) and row-wise (axis=1) operation modes
+  - Type-safe function signatures
+
+- **In-Place Transformation**:
+  - Transform individual values in the DataFrame with direct modification
+  - Customize transformations based on value, row index, and column name
+
 ### Null Safety Implementation
 
 GPandas now features robust null handling through a wrapper-based approach:
@@ -153,6 +167,13 @@ GPandas is designed to provide a familiar and efficient way to work with tabular
         - Writing to a file path or returning a CSV string.
 - **Data Display**:
     - **Pretty Printing**:  Generate formatted, human-readable table representations of DataFrames using `DataFrame.String()`.
+- **Function Application**:
+  - **`DataFrame.Apply()`**: Apply a function to each row or column, returning a new Series containing results
+  - **`DataFrame.ApplyInPlace()`**: Transform each value in the DataFrame directly
+  - **`gpandas.Apply()`**: Convenience method for applying functions to DataFrames
+  - Configurable with options:
+    - **`WithAxis()`**: Choose between column-wise (default) or row-wise operation
+    - **`WithResultType()`**: Specify the type of the resulting Series
 
 ### Data Loading from External Sources
 
@@ -205,6 +226,7 @@ package main
 import (
     "fmt"
     "gpandas"
+    "gpandas/dataframe"
 )
 
 func main() {
@@ -234,6 +256,28 @@ func main() {
         panic(err)
     }
     
+    // Apply a function to calculate sum of numeric columns
+    func calculateSum(s dataframe.Series) any {
+        sum := 0.0
+        for i := 0; i < s.Len(); i++ {
+            if !s.IsNull(i) {
+                switch v := s.GetValue(i).(type) {
+                case int:
+                    sum += float64(v)
+                case float64:
+                    sum += v
+                }
+            }
+        }
+        return sum
+    }
+    
+    sumResult, err := result.Apply(calculateSum, 
+        dataframe.WithResultType(dataframe.FloatType))
+    if err != nil {
+        panic(err)
+    }
+    
     // Export to CSV
     csvString, err := result.ToCSV("")
     if err != nil {
@@ -242,13 +286,3 @@ func main() {
     fmt.Println(csvString)
 }
 ```
-
-## Acknowledgments
-
-- Inspired by Python's pandas library, aiming to bring similar data manipulation capabilities to the Go ecosystem.
-- Built using Go's powerful generic system for type safety and performance.
-- Thanks to the Go community for valuable feedback and contributions.
-
-## Status
-
-GPandas is under active development and is suitable for production use. However, it's still evolving, with ongoing efforts to add more features, enhance performance, and improve API ergonomics. Expect continued updates and improvements.
