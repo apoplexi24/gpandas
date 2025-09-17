@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"gpandas/dataframe"
+	"gpandas/utils/collection"
 
 	"cloud.google.com/go/bigquery"
 	"google.golang.org/api/iterator"
@@ -42,7 +43,6 @@ func connect_to_db(db_config *DbConfig) (*sql.DB, error) {
 		fmt.Printf("%s", err)
 		return nil, err
 	}
-	defer DB.Close()
 	return DB, err
 }
 
@@ -106,11 +106,11 @@ func (GoPandas) Read_sql(query string, db_config DbConfig) (*dataframe.DataFrame
 		return nil, fmt.Errorf("error getting columns: %w", err)
 	}
 
-	// Create slices to store the data
+	// Prepare per-column buffers
 	columnCount := len(columns)
-	data := make([][]any, columnCount)
-	for i := range data {
-		data[i] = make([]any, 0)
+	colBuffers := make([][]any, columnCount)
+	for i := range colBuffers {
+		colBuffers[i] = make([]any, 0)
 	}
 
 	// Create a slice of interfaces to scan into
@@ -128,7 +128,7 @@ func (GoPandas) Read_sql(query string, db_config DbConfig) (*dataframe.DataFrame
 
 		// Add values to respective columns
 		for i := range values {
-			data[i] = append(data[i], values[i])
+			colBuffers[i] = append(colBuffers[i], values[i])
 		}
 	}
 
@@ -136,10 +136,17 @@ func (GoPandas) Read_sql(query string, db_config DbConfig) (*dataframe.DataFrame
 		return nil, fmt.Errorf("error iterating over rows: %w", err)
 	}
 
-	return &dataframe.DataFrame{
-		Columns: columns,
-		Data:    data,
-	}, nil
+	// Build Series per column
+	cols := make(map[string]*collection.Series, columnCount)
+	for i, name := range columns {
+		s, err := collection.NewSeriesWithData(nil, colBuffers[i])
+		if err != nil {
+			return nil, fmt.Errorf("failed creating series for column %s: %w", name, err)
+		}
+		cols[name] = s
+	}
+
+	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), columns...)}, nil
 }
 
 // QueryBigQuery executes a BigQuery SQL query and returns the results as a DataFrame.
@@ -203,13 +210,11 @@ func (GoPandas) From_gbq(query string, projectID string) (*dataframe.DataFrame, 
 		columns = append(columns, col)
 	}
 
-	// first row in columns row
-	firstDataRow := make([]any, len(columns))
-	for i, col := range columns {
-		firstDataRow[i] = firstRow[col]
+	// Initialize per-column buffers with first row
+	colBuffers := make(map[string][]any, len(columns))
+	for _, col := range columns {
+		colBuffers[col] = []any{firstRow[col]}
 	}
-
-	data := [][]any{firstDataRow}
 
 	// Process actual data here
 	for {
@@ -222,16 +227,21 @@ func (GoPandas) From_gbq(query string, projectID string) (*dataframe.DataFrame, 
 			return nil, fmt.Errorf("iterator.Next: %v", err)
 		}
 
-		// Build a row in the same column order
-		interfaceRow := make([]any, len(columns))
-		for i, col := range columns {
-			interfaceRow[i] = row[col]
+		// Append values to column buffers
+		for _, col := range columns {
+			colBuffers[col] = append(colBuffers[col], row[col])
 		}
-		data = append(data, interfaceRow)
 	}
 
-	return &dataframe.DataFrame{
-		Columns: columns,
-		Data:    data,
-	}, nil
+	// Build Series per column
+	cols := make(map[string]*collection.Series, len(columns))
+	for _, name := range columns {
+		s, err := collection.NewSeriesWithData(nil, colBuffers[name])
+		if err != nil {
+			return nil, fmt.Errorf("failed creating series for column %s: %w", name, err)
+		}
+		cols[name] = s
+	}
+
+	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), columns...)}, nil
 }

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"gpandas/dataframe"
+	"gpandas/utils/collection"
 	"io"
 	"os"
+	"reflect"
 	"runtime"
 	"sync"
 )
@@ -100,49 +102,36 @@ func (GoPandas) DataFrame(columns []string, data []Column, columns_types map[str
 		}
 	}
 
-	// Create DataFrame
-	df := &dataframe.DataFrame{
-		Columns: columns,
-		Data:    make([][]any, len(columns)),
-	}
-
-	// Convert data to internal format
-	for i, col := range data {
-		df.Data[i] = make([]any, rowCount)
-		for j, val := range col {
-			// Type assertion based on columns_types using defined types
-			switch columns_types[columns[i]].(type) {
-			case FloatCol:
-				if v, ok := val.(float64); ok {
-					df.Data[i][j] = FloatCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected FloatColumn, got %T", columns[i], val)
-				}
-			case IntCol:
-				if v, ok := val.(int64); ok {
-					df.Data[i][j] = IntCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected IntColumn, got %T", columns[i], val)
-				}
-			case StringCol:
-				if v, ok := val.(string); ok {
-					df.Data[i][j] = StringCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected StringColumn, got %T", columns[i], val)
-				}
-			case BoolCol:
-				if v, ok := val.(bool); ok {
-					df.Data[i][j] = BoolCol{v}
-				} else {
-					return nil, fmt.Errorf("type mismatch for column %s: expected BoolColumn, got %T", columns[i], val)
-				}
-			default:
-				df.Data[i][j] = val // Fallback for any other type
-			}
+	// Create columnar DataFrame
+	cols := make(map[string]*collection.Series, len(columns))
+	for i, colName := range columns {
+		// Build series with dtype enforcement based on columns_types
+		var series *collection.Series
+		// Prepare values slice
+		values := make([]any, rowCount)
+		for j := 0; j < rowCount; j++ {
+			values[j] = data[i][j]
 		}
+		var err error
+		switch columns_types[colName].(type) {
+		case FloatCol:
+			series, err = collection.NewSeriesWithData(reflect.TypeOf(float64(0)), values)
+		case IntCol:
+			series, err = collection.NewSeriesWithData(reflect.TypeOf(int64(0)), values)
+		case StringCol:
+			series, err = collection.NewSeriesWithData(reflect.TypeOf(""), values)
+		case BoolCol:
+			series, err = collection.NewSeriesWithData(reflect.TypeOf(true), values)
+		default:
+			series, err = collection.NewSeriesWithData(nil, values)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed creating series for column %s: %w", colName, err)
+		}
+		cols[colName] = series
 	}
 
-	return df, nil
+	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), columns...)}, nil
 }
 
 // Read_csv reads a CSV file from the specified filepath and converts it into a DataFrame.
@@ -259,12 +248,18 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 	// Infer column types (default to string for now)
 	columnTypes := make(map[string]any, columnCount)
 	for _, header := range headers {
-		columnTypes[header] = StringCol{} // Placeholder for type inference
+		columnTypes[header] = StringCol{}
 	}
 
-	// Construct DataFrame
-	return &dataframe.DataFrame{
-		Columns: headers,
-		Data:    combinedData,
-	}, nil
+	// Build Series per column
+	cols := make(map[string]*collection.Series, columnCount)
+	for i, header := range headers {
+		series, err := collection.NewSeriesWithData(nil, combinedData[i])
+		if err != nil {
+			return nil, fmt.Errorf("failed creating series for column %s: %w", header, err)
+		}
+		cols[header] = series
+	}
+
+	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), headers...)}, nil
 }

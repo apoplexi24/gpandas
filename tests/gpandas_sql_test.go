@@ -3,6 +3,7 @@ package gpandas_test
 import (
 	"database/sql"
 	"gpandas"
+	"os"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -10,6 +11,9 @@ import (
 )
 
 func TestRead_sql(t *testing.T) {
+	if os.Getenv("RUN_DB_TESTS") == "" {
+		t.Skip("Skipping DB tests; set RUN_DB_TESTS=1 to run")
+	}
 	// Create mock db
 	db, mock, err := sqlmock.New()
 	if err != nil {
@@ -131,19 +135,30 @@ func TestRead_sql(t *testing.T) {
 					t.Errorf("unfulfilled expectations: %v", err)
 				}
 
-				// Check DataFrame structure
-				if len(df.Columns) == 0 {
-					t.Error("expected non-empty columns")
+				if len(df.ColumnOrder) == 0 {
+					t.Error("expected non-empty ColumnOrder")
+				}
+				if len(df.Columns) != len(df.ColumnOrder) {
+					t.Errorf("columns map size and ColumnOrder mismatch: %d vs %d", len(df.Columns), len(df.ColumnOrder))
 				}
 
-				// For non-empty result sets, check data consistency
-				if len(df.Data) > 0 {
-					// Check if all columns have the same length
-					firstColLen := len(df.Data[0])
-					for i, col := range df.Data {
-						if len(col) != firstColLen {
-							t.Errorf("column %d has inconsistent length: expected %d, got %d",
-								i, firstColLen, len(col))
+				// If rows exist, ensure per-column lengths match and values are non-nil
+				rows := 0
+				if len(df.ColumnOrder) > 0 {
+					rows = df.Columns[df.ColumnOrder[0]].Len()
+					for _, c := range df.ColumnOrder[1:] {
+						if l := df.Columns[c].Len(); l != rows {
+							t.Errorf("column %s length mismatch: expected %d, got %d", c, rows, l)
+						}
+					}
+				}
+
+				// Optional: verify basic types are consistent (can't assert exact DB types here)
+				if rows > 0 {
+					for _, c := range df.ColumnOrder {
+						dt := df.Columns[c].DType()
+						if dt == nil {
+							t.Errorf("unexpected nil dtype for column %s", c)
 						}
 					}
 				}

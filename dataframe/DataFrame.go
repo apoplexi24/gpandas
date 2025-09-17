@@ -43,9 +43,9 @@ func GetMapKeys[K comparable, V any](input_map map[K]V) (collection.Set[K], erro
 }
 
 type DataFrame struct {
-	sync.Mutex
-	Columns []string
-	Data    [][]any
+	sync.RWMutex
+	Columns     map[string]*collection.Series
+	ColumnOrder []string
 }
 
 // Rename changes the names of specified columns in the DataFrame.
@@ -110,7 +110,7 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 	df.Lock()
 	defer df.Unlock()
 
-	dfcols, err2 := collection.ToSet(df.Columns)
+	dfcols, err2 := collection.ToSet(df.ColumnOrder)
 	if err2 != nil {
 		return err2
 	}
@@ -129,9 +129,15 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 
 	// all conditions met till this point
 	for original_column_name, new_column_name := range columns {
-		for df_column_idx := range df.Columns {
-			if df.Columns[df_column_idx] == original_column_name {
-				df.Columns[df_column_idx] = new_column_name
+		// move series in map
+		if series, ok := df.Columns[original_column_name]; ok {
+			delete(df.Columns, original_column_name)
+			df.Columns[new_column_name] = series
+		}
+		// update order slice
+		for i := range df.ColumnOrder {
+			if df.ColumnOrder[i] == original_column_name {
+				df.ColumnOrder[i] = new_column_name
 			}
 		}
 	}
@@ -194,31 +200,45 @@ func (df *DataFrame) String() string {
 	table.SetHeaderLine(true)
 	table.SetBorder(true)
 
-	// Set headers using the DataFrame's Columns
-	table.SetHeader(df.Columns)
+	// Set headers using the DataFrame's ColumnOrder
+	table.SetHeader(df.ColumnOrder)
 
-	// Determine how many rows to display (maximum 10)
-	numRows := len(df.Data)
-	displayRows := numRows
-	if numRows > 10 {
+	// Determine number of rows using the first column's length (min length across columns)
+	rowCount := 0
+	if len(df.ColumnOrder) > 0 {
+		first := df.Columns[df.ColumnOrder[0]]
+		rowCount = first.Len()
+		for _, colName := range df.ColumnOrder[1:] {
+			if s := df.Columns[colName]; s != nil {
+				if s.Len() < rowCount {
+					rowCount = s.Len()
+				}
+			}
+		}
+	}
+	displayRows := rowCount
+	if rowCount > 10 {
 		displayRows = 10
 	}
 
 	// Append only the first displayRows rows to the table
 	for i := 0; i < displayRows; i++ {
-		row := df.Data[i]
-		stringRow := make([]string, len(row))
-		for j, val := range row {
-			stringRow[j] = fmt.Sprintf("%v", val)
+		stringRow := make([]string, len(df.ColumnOrder))
+		for j, colName := range df.ColumnOrder {
+			if val, err := df.Columns[colName].At(i); err == nil {
+				stringRow[j] = fmt.Sprintf("%v", val)
+			} else {
+				stringRow[j] = ""
+			}
 		}
 		table.Append(stringRow)
 	}
 
 	// Add row count information.
 	// If there are more than 10 rows, mention that only the first 10 are displayed.
-	shape := fmt.Sprintf("[%d rows x %d columns]", numRows, len(df.Columns))
-	if numRows > 10 {
-		shape = fmt.Sprintf("Showing first 10 rows of %d rows x %d columns", numRows, len(df.Columns))
+	shape := fmt.Sprintf("[%d rows x %d columns]", rowCount, len(df.ColumnOrder))
+	if rowCount > 10 {
+		shape = fmt.Sprintf("Showing first 10 rows of %d rows x %d columns", rowCount, len(df.ColumnOrder))
 	}
 
 	// Render the table and return the string representation
@@ -265,20 +285,32 @@ func (df *DataFrame) ToCSV(filepath string, separator ...string) (string, error)
 	var buf bytes.Buffer
 
 	// Write headers
-	for i, col := range df.Columns {
+	for i, colName := range df.ColumnOrder {
 		if i > 0 {
 			buf.WriteString(sep)
 		}
-		buf.WriteString(col)
+		buf.WriteString(colName)
 	}
 	buf.WriteString("\n")
 
+	// Determine row count (use shortest column to avoid out-of-range)
+	rowCount := 0
+	if len(df.ColumnOrder) > 0 {
+		rowCount = df.Columns[df.ColumnOrder[0]].Len()
+		for _, colName := range df.ColumnOrder[1:] {
+			if s := df.Columns[colName]; s != nil && s.Len() < rowCount {
+				rowCount = s.Len()
+			}
+		}
+	}
+
 	// Write data rows
-	for _, row := range df.Data {
-		for i, val := range row {
+	for r := 0; r < rowCount; r++ {
+		for i, colName := range df.ColumnOrder {
 			if i > 0 {
 				buf.WriteString(sep)
 			}
+			val, _ := df.Columns[colName].At(r)
 			buf.WriteString(fmt.Sprintf("%v", val))
 		}
 		buf.WriteString("\n")

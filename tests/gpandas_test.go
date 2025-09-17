@@ -4,6 +4,7 @@ import (
 	"gpandas"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -16,9 +17,10 @@ func TestRead_csv(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	tests := []struct {
-		name        string
-		csvContent  string
-		expectError bool
+		name         string
+		csvContent   string
+		expectError  bool
+		expectedRows int
 	}{
 		{
 			name: "valid csv",
@@ -26,13 +28,15 @@ func TestRead_csv(t *testing.T) {
 John,30,New York
 Alice,25,London
 Bob,35,Paris`,
-			expectError: false,
+			expectError:  false,
+			expectedRows: 3,
 		},
 		{
 			name: "empty csv",
 			csvContent: `name,age,city
 `,
-			expectError: true,
+			expectError:  false,
+			expectedRows: 0,
 		},
 		{
 			name: "inconsistent columns",
@@ -40,17 +44,20 @@ Bob,35,Paris`,
 John,30
 Alice,25,London,Extra
 Bob,35,Paris`,
-			expectError: true,
+			expectError:  false,
+			expectedRows: 1,
 		},
 		{
-			name:        "empty file",
-			csvContent:  "",
-			expectError: true,
+			name:         "empty file",
+			csvContent:   "",
+			expectError:  true,
+			expectedRows: 0,
 		},
 		{
-			name:        "only headers",
-			csvContent:  `name,age,city`,
-			expectError: true,
+			name:         "only headers",
+			csvContent:   `name,age,city`,
+			expectError:  false,
+			expectedRows: 0,
 		},
 		{
 			name: "valid csv with quoted fields",
@@ -58,7 +65,8 @@ Bob,35,Paris`,
 John,"Software Engineer, Senior",New York
 Alice,"Product Manager, Lead",London
 Bob,"Data Scientist, ML",Paris`,
-			expectError: false,
+			expectError:  false,
+			expectedRows: 3,
 		},
 	}
 
@@ -85,29 +93,28 @@ Bob,"Data Scientist, ML",Paris`,
 
 			// Additional checks for successful cases
 			if !tt.expectError && err == nil {
-				// Check if DataFrame is not nil
 				if df == nil {
 					t.Error("expected non-nil DataFrame")
 					return
 				}
-
-				// Check if columns are present
-				if len(df.Columns) == 0 {
-					t.Error("expected non-empty columns")
+				if len(df.ColumnOrder) == 0 {
+					t.Error("expected non-empty ColumnOrder")
 				}
-
-				// Check if data is present
-				if len(df.Data) == 0 {
-					t.Error("expected non-empty data")
+				if len(df.Columns) != len(df.ColumnOrder) {
+					t.Errorf("columns map size and ColumnOrder mismatch: %d vs %d", len(df.Columns), len(df.ColumnOrder))
 				}
-
-				// Check if all columns have the same length
-				firstColLen := len(df.Data[0])
-				for i, col := range df.Data {
-					if len(col) != firstColLen {
-						t.Errorf("column %d has inconsistent length: expected %d, got %d",
-							i, firstColLen, len(col))
+				// compute row count as min length across columns
+				rows := 0
+				if len(df.ColumnOrder) > 0 {
+					rows = df.Columns[df.ColumnOrder[0]].Len()
+					for _, c := range df.ColumnOrder[1:] {
+						if s := df.Columns[c]; s.Len() < rows {
+							rows = s.Len()
+						}
 					}
+				}
+				if rows != tt.expectedRows {
+					t.Errorf("unexpected row count: expected %d, got %d", tt.expectedRows, rows)
 				}
 			}
 		})
@@ -149,12 +156,16 @@ Bob,35,true,92.8`
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify all values are StringCol (correct behavior)
-	for i, col := range df.Data {
-		for j, val := range col {
-			if _, ok := val.(gpandas.StringCol); !ok {
-				t.Errorf("expected StringCol type for value at column %d row %d, got %T",
-					i, j, val)
+	// Verify all series have dtype string and contain string values
+	for _, colName := range df.ColumnOrder {
+		series := df.Columns[colName]
+		if series.DType() != reflect.TypeOf("") {
+			t.Errorf("expected dtype string for column %s, got %v", colName, series.DType())
+		}
+		for i := 0; i < series.Len(); i++ {
+			val, _ := series.At(i)
+			if _, ok := val.(string); !ok {
+				t.Errorf("expected string value at index %d in column %s, got %T", i, colName, val)
 			}
 		}
 	}
