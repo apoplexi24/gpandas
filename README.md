@@ -33,10 +33,12 @@ The project is organized into the following directories and files:
 │   ├── gpandas_test.go
 │   └── utils
 │       └── collection
-│           └── set_test.go
+│           ├── set_test.go
+│           └── series_test.go
 └── utils
     └── collection
-        └── set.go
+        ├── set.go
+        └── series.go
 ```
 
 - **`.gitignore`**: Specifies intentionally untracked files that Git should ignore. Currently ignores CSV files, executables, and environment files (`.env`).
@@ -46,8 +48,8 @@ The project is organized into the following directories and files:
     - **`read_gbq.go` & `read_gbq.py`**: Benchmark Go GPandas and Python Pandas-GBQ reading from Google BigQuery.
     - **`sql_commands.go`**: Example Go script demonstrating SQL query execution against BigQuery using GPandas.
 - **`dataframe/`**:  Houses the core DataFrame implementation:
-    - **`DataFrame.go`**: Defines the `DataFrame` struct, column types (`FloatCol`, `StringCol`, `IntCol`, `BoolCol`, `Column`, `TypeColumn`), and fundamental DataFrame operations such as:
-        - `Rename()`: For renaming columns.
+    - **`DataFrame.go`**: Defines the columnar `DataFrame` struct with `Columns map[string]*Series` and `ColumnOrder []string`, along with fundamental DataFrame operations such as:
+        - `Rename()`: For renaming columns while preserving order.
         - `String()`: For pretty printing DataFrame content as a formatted table in string format.
         - `ToCSV()`: For exporting DataFrame content to CSV format, either as a string or to a file.
     - **`merge.go`**: Implements DataFrame merging capabilities, supporting various join types:
@@ -65,8 +67,10 @@ The project is organized into the following directories and files:
     - **`gpandas_sql_test.go`**: Tests for SQL related functionalities in `gpandas_sql.go` (`Read_sql`, `From_gbq`).
     - **`gpandas_test.go`**: Tests for general GPandas functionalities in `gpandas.go` (e.g., `Read_csv`).
     - **`utils/collection/set_test.go`**: Unit tests for the generic `Set` data structure implemented in `utils/collection/set.go`.
+    - **`utils/collection/series_test.go`**: Unit tests for the `Series` data structure, covering basic operations, type enforcement, and concurrency safety.
 - **`utils/collection/`**: Contains generic collection utilities:
     - **`set.go`**: Implements a generic `Set` data structure in Go, providing common set operations like `Add`, `Has`, `Union`, `Intersect`, `Difference`, and `Compare`. This `Set` is used internally within GPandas for efficient data handling.
+    - **`series.go`**: Implements a concurrency-safe `Series` type that enforces homogeneous data types within columns. Each Series maintains a `dtype` and provides methods like `At()`, `Set()`, `Append()`, and `Len()` for efficient columnar data access.
 
 ## Code Functionality
 
@@ -74,9 +78,9 @@ GPandas is designed to provide a familiar and efficient way to work with tabular
 
 ### Core DataFrame Operations
 
-- **DataFrame Creation**: Construct DataFrames from in-memory data using `gpandas.DataFrame()`, or load from external sources like CSV files using `gpandas.Read_csv()`.
+- **DataFrame Creation**: Construct columnar DataFrames from in-memory data using `gpandas.DataFrame()`, or load from external sources like CSV files using `gpandas.Read_csv()`. Each DataFrame uses a `map[string]*Series` structure for efficient columnar access.
 - **Column Manipulation**:
-    - **Renaming**: Easily rename columns using `DataFrame.Rename()`.
+    - **Renaming**: Easily rename columns using `DataFrame.Rename()` while preserving column order.
 - **Data Merging**: Combine DataFrames based on common columns with `DataFrame.Merge()`, supporting:
     - **Inner Join (`InnerMerge`)**: Keep only matching rows from both DataFrames.
     - **Left Join (`LeftMerge`)**: Keep all rows from the left DataFrame, and matching rows from the right.
@@ -99,25 +103,27 @@ GPandas is designed to provide a familiar and efficient way to work with tabular
 
 ### Data Types
 
-GPandas provides strong type support for common data types within DataFrames:
+GPandas provides strong type support through its columnar architecture:
 
-- **`FloatCol`**: For `float64` columns.
-- **`StringCol`**: For `string` columns.
-- **`IntCol`**: For `int64` columns.
-- **`BoolCol`**: For `bool` columns.
+- **`Series`**: The fundamental column type that enforces homogeneous data types within each column. Each Series maintains a `dtype` and provides type-safe access methods.
+- **`FloatCol`**: For `float64` columns (legacy type for DataFrame construction).
+- **`StringCol`**: For `string` columns (legacy type for DataFrame construction).
+- **`IntCol`**: For `int64` columns (legacy type for DataFrame construction).
+- **`BoolCol`**: For `bool` columns (legacy type for DataFrame construction).
 - **`Column`**: Generic column type to hold `any` type values when specific type constraints are not needed.
 - **`TypeColumn[T comparable]`**: Generic column type for columns of any comparable type `T`.
 
-GPandas aims for type safety in its operations, ensuring data integrity and preventing unexpected behavior.
+GPandas ensures type safety through Series-level dtype enforcement, preventing type mismatches and ensuring data integrity across all operations.
 
 ### Performance Features
 
 GPandas is built with performance in mind, incorporating several features for efficiency:
 
+- **Columnar Storage**: Uses a columnar DataFrame structure (`map[string]*Series`) for efficient column-wise operations and memory layout, similar to modern analytical databases.
 - **Concurrent CSV Reading**: Utilizes worker pools and buffered channels for parallel CSV parsing, significantly speeding up CSV loading, especially for large files.
 - **Efficient Data Structures**:  Uses Go's native data structures and generics to minimize overhead and maximize performance.
-- **Mutex-based Thread Safety**:  Provides thread-safe operations for DataFrame manipulations using mutex locks, ensuring data consistency in concurrent environments.
-- **Optimized Memory Management**: Designed for efficient memory usage to handle large datasets effectively.
+- **Series-level Thread Safety**:  Provides thread-safe operations at the Series level using RWMutex, ensuring data consistency in concurrent environments while allowing concurrent reads.
+- **Optimized Memory Management**: Designed for efficient memory usage with columnar storage to handle large datasets effectively.
 - **Buffered Channels**: Employs buffered channels for data processing pipelines to improve throughput and reduce blocking.
 
 ## Getting Started
@@ -138,7 +144,11 @@ go get github.com/apoplexi24/gpandas
 
 ### DataFrame
 
-The central data structure in GPandas, the `DataFrame`, is designed for handling two-dimensional, labeled data. It provides methods for data manipulation, analysis, and I/O operations, similar to pandas DataFrames in Python.
+The central data structure in GPandas, the `DataFrame`, is designed for handling two-dimensional, labeled data using a columnar architecture. It consists of a `map[string]*Series` for column storage and a `ColumnOrder []string` for maintaining column sequence. This design provides methods for data manipulation, analysis, and I/O operations, similar to pandas DataFrames in Python but with improved performance characteristics.
+
+### Series
+
+The `utils/collection/series.go` provides a concurrency-safe `Series` type that serves as the fundamental building block for DataFrame columns. Each Series enforces homogeneous data types and provides efficient access methods like `At()`, `Set()`, `Append()`, and `Len()`.
 
 ### Set
 
@@ -148,9 +158,11 @@ The `utils/collection/set.go` provides a generic `Set` implementation, useful fo
 
 GPandas is engineered for performance through:
 
+- **Columnar Architecture**: The `map[string]*Series` structure enables efficient column-wise operations and better memory locality, similar to modern analytical databases.
 - **Generics**: Leveraging Go generics to avoid runtime type assertions and interface overhead, leading to faster execution.
-- **Efficient Memory Usage**:  Designed to minimize memory allocations and copies for better performance when dealing with large datasets.
+- **Efficient Memory Usage**:  Designed to minimize memory allocations and copies with columnar storage for better performance when dealing with large datasets.
 - **Concurrency**: Utilizing Go's concurrency features, such as goroutines and channels, to parallelize operations like CSV reading and potentially other data processing tasks in the future.
+- **Series-level Optimization**: Each Series maintains its own type information and provides optimized access patterns for columnar data.
 - **Zero-copy Operations**:  Aiming for zero-copy operations wherever feasible to reduce overhead and improve speed.
 
 ### Development Setup
