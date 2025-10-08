@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
-	"gpandas"
 	"time"
+
+	"github.com/apoplexi24/gpandas"
 
 	"github.com/joho/godotenv"
 )
 
-func main() {
+func read_gbq_test() {
 	envFile, _ := godotenv.Read(".env")
 	table_id := envFile["TABLEID"]
 	start := time.Now()

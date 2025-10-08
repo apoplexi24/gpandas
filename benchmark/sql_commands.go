@@ -2,14 +2,19 @@ package main
 
 import (
 	"fmt"
-	"gpandas"
 	"time"
+
+	"github.com/apoplexi24/gpandas"
+
+	"github.com/joho/godotenv"
 )
 
-func maitrn() {
+func sql_commands_test() {
+	envFile, _ := godotenv.Read(".env")
+	table_id := envFile["TABLEID"]
 	start := time.Now()
 	gp := gpandas.GoPandas{}
-	df, err := gp.From_gbq("SELECT distinct(Card_Name) FROM `jm-ebg.NewsFeed.NewsFeedCardsTracker`", "jm-ebg")
+	df, err := gp.From_gbq("SELECT distinct(Card_Name) FROM `"+table_id+".NewsFeed.NewsFeedCardsTracker`", "jm-ebg")
 	if err != nil {
 		fmt.Printf("Error while querying => %v", err)
 	}
