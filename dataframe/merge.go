@@ -3,7 +3,8 @@ package dataframe
 import (
 	"errors"
 	"fmt"
-	"gpandas/utils/collection"
+
+	"github.com/apoplexi24/gpandas/utils/collection"
 )
 
 // MergeHow represents the type of merge operation

@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"gpandas/utils/collection"
 	"os"
 	"sync"
+
+	"github.com/apoplexi24/gpandas/utils/collection"
 
 	"github.com/olekukonko/tablewriter"
 )
