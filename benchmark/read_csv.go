@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-func readcsv() {
+func main() {
 	start := time.Now()
 	gp := gpandas.GoPandas{}
-	_, err := gp.Read_csv("./customers-2000000.csv")
+	_, err := gp.Read_csv("./customers-100.csv")
 	if err != nil {
 		fmt.Printf("Error reading CSV: %v\n", err)
 		return

@@ -1,10 +1,11 @@
 package dataframe_test
 
 import (
-	"gpandas/dataframe"
-	"gpandas/utils/collection"
 	"os"
 	"testing"
+
+	"github.com/apoplexi24/gpandas/dataframe"
+	"github.com/apoplexi24/gpandas/utils/collection"
 )
 
 // Helper function to compare slices

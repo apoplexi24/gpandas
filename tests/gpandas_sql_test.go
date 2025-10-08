@@ -2,9 +2,10 @@ package gpandas_test
 
 import (
 	"database/sql"
-	"gpandas"
 	"os"
 	"testing"
+
+	"github.com/apoplexi24/gpandas"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	_ "github.com/lib/pq" // PostgreSQL driver

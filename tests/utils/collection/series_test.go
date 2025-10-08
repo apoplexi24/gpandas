@@ -1,9 +1,10 @@
 package collection_test
 
 import (
-	"gpandas/utils/collection"
 	"reflect"
 	"testing"
+
+	"github.com/apoplexi24/gpandas/utils/collection"
 )
 
 func TestSeriesBasic(t *testing.T) {

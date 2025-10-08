@@ -4,13 +4,14 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"gpandas/dataframe"
-	"gpandas/utils/collection"
 	"io"
 	"os"
 	"reflect"
 	"runtime"
 	"sync"
+
+	"github.com/apoplexi24/gpandas/dataframe"
+	"github.com/apoplexi24/gpandas/utils/collection"
 )
 
 type GoPandas struct{}

@@ -1,3 +1,5 @@
 *.csv
 *.exe
 *.env
+.DS_Store
+*.swp

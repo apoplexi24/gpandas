@@ -1,11 +1,12 @@
 package gpandas_test
 
 import (
-	"gpandas"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/apoplexi24/gpandas"
 )
 
 func TestRead_csv(t *testing.T) {

@@ -1,8 +1,9 @@
 package collection_test
 
 import (
-	"gpandas/utils/collection"
 	"testing"
+
+	"github.com/apoplexi24/gpandas/utils/collection"
 )
 
 func TestNewSet(t *testing.T) {

@@ -4,8 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"gpandas/dataframe"
-	"gpandas/utils/collection"
+
+	"github.com/apoplexi24/gpandas/dataframe"
+	"github.com/apoplexi24/gpandas/utils/collection"
 
 	"cloud.google.com/go/bigquery"
 	"google.golang.org/api/iterator"
