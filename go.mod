@@ -1,4 +1,4 @@
-module gpandas
+module github.com/apoplexi24/gpandas
 
 go 1.23.0
 
