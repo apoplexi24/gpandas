@@ -166,7 +166,13 @@ func (df *DataFrame) Merge(other *DataFrame, on string, how MergeHow) (*DataFram
 		cols[name] = s
 	}
 
-	return &DataFrame{Columns: cols, ColumnOrder: resultColumns}, nil
+	// Create default index for result
+	index := make([]string, len(resultRows))
+	for i := 0; i < len(resultRows); i++ {
+		index[i] = fmt.Sprintf("%d", i)
+	}
+
+	return &DataFrame{Columns: cols, ColumnOrder: resultColumns, Index: index}, nil
 }
 
 // performInnerMerge combines two DataFrames based on a specified column index,

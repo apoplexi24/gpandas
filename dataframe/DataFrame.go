@@ -47,6 +47,7 @@ type DataFrame struct {
 	sync.RWMutex
 	Columns     map[string]*collection.Series
 	ColumnOrder []string
+	Index       []string // Row labels, defaults to string representations of row numbers
 }
 
 // Rename changes the names of specified columns in the DataFrame.
@@ -328,4 +329,111 @@ func (df *DataFrame) ToCSV(filepath string, separator ...string) (string, error)
 
 	// If no filepath, return the CSV string
 	return buf.String(), nil
+}
+
+// Loc returns a label-based indexer for the DataFrame
+func (df *DataFrame) Loc() *LocIndexer {
+	return &LocIndexer{df: df}
+}
+
+// ILoc returns an integer position-based indexer for the DataFrame
+func (df *DataFrame) ILoc() *iLocIndexer {
+	return &iLocIndexer{df: df}
+}
+
+// Select returns a new DataFrame with only the specified columns.
+// If a single column is requested, still returns a DataFrame (not a Series).
+func (df *DataFrame) Select(columns ...string) (*DataFrame, error) {
+	if df == nil {
+		return nil, errors.New("DataFrame is nil")
+	}
+	if len(columns) == 0 {
+		return nil, errors.New("at least one column name is required")
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	// Validate all columns exist
+	for _, colName := range columns {
+		if _, ok := df.Columns[colName]; !ok {
+			return nil, fmt.Errorf("column '%s' not found", colName)
+		}
+	}
+
+	// Create new DataFrame with selected columns (zero-copy - just reference same Series)
+	newCols := make(map[string]*collection.Series, len(columns))
+	for _, colName := range columns {
+		newCols[colName] = df.Columns[colName]
+	}
+
+	return &DataFrame{
+		Columns:     newCols,
+		ColumnOrder: append([]string(nil), columns...),
+		Index:       append([]string(nil), df.Index...),
+	}, nil
+}
+
+// SelectCol returns a single column as a Series reference.
+// This provides direct access to the underlying Series.
+func (df *DataFrame) SelectCol(column string) (*collection.Series, error) {
+	if df == nil {
+		return nil, errors.New("DataFrame is nil")
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	series, ok := df.Columns[column]
+	if !ok {
+		return nil, fmt.Errorf("column '%s' not found", column)
+	}
+
+	return series, nil
+}
+
+// SetIndex sets custom row labels for the DataFrame.
+// The length of the index must match the number of rows in the DataFrame.
+func (df *DataFrame) SetIndex(index []string) error {
+	if df == nil {
+		return errors.New("DataFrame is nil")
+	}
+
+	df.Lock()
+	defer df.Unlock()
+
+	// Determine row count
+	rowCount := 0
+	if len(df.ColumnOrder) > 0 {
+		rowCount = df.Columns[df.ColumnOrder[0]].Len()
+	}
+
+	if len(index) != rowCount {
+		return fmt.Errorf("index length (%d) must match number of rows (%d)", len(index), rowCount)
+	}
+
+	df.Index = append([]string(nil), index...)
+	return nil
+}
+
+// ResetIndex resets the index to default integer sequence ("0", "1", "2", ...).
+func (df *DataFrame) ResetIndex() {
+	if df == nil {
+		return
+	}
+
+	df.Lock()
+	defer df.Unlock()
+
+	// Determine row count
+	rowCount := 0
+	if len(df.ColumnOrder) > 0 {
+		rowCount = df.Columns[df.ColumnOrder[0]].Len()
+	}
+
+	// Create default index
+	df.Index = make([]string, rowCount)
+	for i := 0; i < rowCount; i++ {
+		df.Index[i] = fmt.Sprintf("%d", i)
+	}
 }

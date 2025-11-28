@@ -93,6 +93,30 @@ GPandas is designed to provide a familiar and efficient way to work with tabular
 - **Data Display**:
     - **Pretty Printing**:  Generate formatted, human-readable table representations of DataFrames using `DataFrame.String()`.
 
+### Indexing and Selection
+
+GPandas provides pandas-like indexing capabilities for intuitive data access:
+
+- **Column Selection**:
+    - **`Select(columns ...string)`**: Select one or more columns, returning a new DataFrame.
+    - **`SelectCol(column string)`**: Select a single column as a Series.
+- **Label-based Indexing (`Loc`)**:
+    - **`Loc().At(rowLabel, colName)`**: Access a single value by row label and column name.
+    - **`Loc().Row(rowLabel)`**: Select a single row by label as a DataFrame.
+    - **`Loc().Rows(rowLabels)`**: Select multiple rows by labels.
+    - **`Loc().Col(colName)`**: Select a single column by name.
+    - **`Loc().Cols(colNames)`**: Select multiple columns by names.
+- **Position-based Indexing (`iLoc`)**:
+    - **`iLoc().At(rowPos, colPos)`**: Access a single value by row and column integer positions.
+    - **`iLoc().Row(rowPos)`**: Select a single row by integer position.
+    - **`iLoc().Rows(rowPositions)`**: Select multiple rows by integer positions.
+    - **`iLoc().Range(start, end)`**: Select a range of rows `[start, end)`.
+    - **`iLoc().Col(colPos)`**: Select a single column by integer position.
+    - **`iLoc().Cols(colPositions)`**: Select multiple columns by integer positions.
+- **Index Management**:
+    - **`SetIndex([]string)`**: Set custom row labels.
+    - **`ResetIndex()`**: Reset index to default integer sequence.
+
 ### Data Loading from External Sources
 
 - **CSV Reading**: Efficiently read CSV files into DataFrames with `gpandas.Read_csv()`, leveraging concurrent processing for performance.

@@ -132,7 +132,13 @@ func (GoPandas) DataFrame(columns []string, data []Column, columns_types map[str
 		cols[colName] = series
 	}
 
-	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), columns...)}, nil
+	// Create default index
+	index := make([]string, rowCount)
+	for i := 0; i < rowCount; i++ {
+		index[i] = fmt.Sprintf("%d", i)
+	}
+
+	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), columns...), Index: index}, nil
 }
 
 // Read_csv reads a CSV file from the specified filepath and converts it into a DataFrame.
@@ -262,5 +268,15 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		cols[header] = series
 	}
 
-	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), headers...)}, nil
+	// Create default index based on row count
+	rowCount := 0
+	if len(headers) > 0 && cols[headers[0]] != nil {
+		rowCount = cols[headers[0]].Len()
+	}
+	index := make([]string, rowCount)
+	for i := 0; i < rowCount; i++ {
+		index[i] = fmt.Sprintf("%d", i)
+	}
+
+	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), headers...), Index: index}, nil
 }
