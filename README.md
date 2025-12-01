@@ -201,6 +201,10 @@ GPandas is engineered for performance through:
    go mod download
    ```
 
+## License
+
+This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+
 ## Acknowledgments
 
 - Inspired by Python's pandas library, aiming to bring similar data manipulation capabilities to the Go ecosystem.
