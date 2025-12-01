@@ -918,6 +918,8 @@ func (s *AnySeries) MaskCopy() []bool {
 // NewSeriesFromValues creates a typed Series from a slice of any values.
 // It infers the type from the first non-nil value and creates the appropriate typed series.
 // If all values are nil or empty, it creates an AnySeries.
+// Integer types (int, int8, int16, int32, int64) are all stored as Int64Series.
+// Float types (float32, float64) are all stored as Float64Series.
 func NewSeriesFromValues(values []any) (Series, error) {
 	if len(values) == 0 {
 		return NewAnySeries(0), nil
@@ -943,30 +945,36 @@ func NewSeriesFromValues(values []any) (Series, error) {
 
 	// Create appropriate typed series based on inferred type
 	switch inferredType.Kind() {
-	case reflect.Float64:
+	case reflect.Float64, reflect.Float32:
 		data := make([]float64, len(values))
 		mask := make([]bool, len(values))
 		for i, v := range values {
 			if v == nil {
 				mask[i] = true
-			} else if f, ok := v.(float64); ok {
-				data[i] = f
 			} else {
-				return nil, fmt.Errorf("type mismatch at index %d: expected float64, got %T", i, v)
+				rv := reflect.ValueOf(v)
+				if rv.Kind() >= reflect.Float32 && rv.Kind() <= reflect.Float64 {
+					data[i] = rv.Float()
+				} else {
+					return nil, fmt.Errorf("type mismatch at index %d: expected float, got %T", i, v)
+				}
 			}
 		}
 		return NewFloat64SeriesFromData(data, mask)
 
-	case reflect.Int64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		data := make([]int64, len(values))
 		mask := make([]bool, len(values))
 		for i, v := range values {
 			if v == nil {
 				mask[i] = true
-			} else if n, ok := v.(int64); ok {
-				data[i] = n
 			} else {
-				return nil, fmt.Errorf("type mismatch at index %d: expected int64, got %T", i, v)
+				rv := reflect.ValueOf(v)
+				if rv.Kind() >= reflect.Int && rv.Kind() <= reflect.Int64 {
+					data[i] = rv.Int()
+				} else {
+					return nil, fmt.Errorf("type mismatch at index %d: expected int, got %T", i, v)
+				}
 			}
 		}
 		return NewInt64SeriesFromData(data, mask)
@@ -1027,36 +1035,43 @@ func NewSeriesOfType(dtype reflect.Type, capacity int) Series {
 
 // NewSeriesWithData creates a Series from values with explicit dtype.
 // If dtype is nil, it infers the type from the first non-nil value.
+// Integer types are stored as Int64Series, float types as Float64Series.
 func NewSeriesWithData(dtype reflect.Type, values []any) (Series, error) {
 	if dtype == nil {
 		return NewSeriesFromValues(values)
 	}
 
 	switch dtype.Kind() {
-	case reflect.Float64:
+	case reflect.Float64, reflect.Float32:
 		data := make([]float64, len(values))
 		mask := make([]bool, len(values))
 		for i, v := range values {
 			if v == nil {
 				mask[i] = true
-			} else if f, ok := v.(float64); ok {
-				data[i] = f
 			} else {
-				return nil, fmt.Errorf("type mismatch at index %d: expected float64, got %T", i, v)
+				rv := reflect.ValueOf(v)
+				if rv.Kind() >= reflect.Float32 && rv.Kind() <= reflect.Float64 {
+					data[i] = rv.Float()
+				} else {
+					return nil, fmt.Errorf("type mismatch at index %d: expected float, got %T", i, v)
+				}
 			}
 		}
 		return NewFloat64SeriesFromData(data, mask)
 
-	case reflect.Int64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		data := make([]int64, len(values))
 		mask := make([]bool, len(values))
 		for i, v := range values {
 			if v == nil {
 				mask[i] = true
-			} else if n, ok := v.(int64); ok {
-				data[i] = n
 			} else {
-				return nil, fmt.Errorf("type mismatch at index %d: expected int64, got %T", i, v)
+				rv := reflect.ValueOf(v)
+				if rv.Kind() >= reflect.Int && rv.Kind() <= reflect.Int64 {
+					data[i] = rv.Int()
+				} else {
+					return nil, fmt.Errorf("type mismatch at index %d: expected int, got %T", i, v)
+				}
 			}
 		}
 		return NewInt64SeriesFromData(data, mask)

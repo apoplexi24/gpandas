@@ -37,7 +37,8 @@ func main() {
 	// Example 2: Get single column as Series
 	fmt.Println("\n=== Get 'age' column as Series ===")
 	ageSeries, _ := df.SelectCol("age")
-	fmt.Printf("Length: %d, First value: %v\n", ageSeries.Len(), ageSeries.MustAt(0))
+	firstVal, _ := ageSeries.At(0)
+	fmt.Printf("Length: %d, First value: %v\n", ageSeries.Len(), firstVal)
 
 	// Example 3: Set custom index
 	fmt.Println("\n=== Set Custom Index ===")

@@ -67,13 +67,13 @@ func TestDataFrameRename(t *testing.T) {
 	}{
 		{
 			name:        "successful rename",
-			df:          &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
+			df:          &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
 			columns:     map[string]string{"A": "X", "B": "Y"},
 			expectError: false,
 		},
 		{
 			name:        "rename non-existent column",
-			df:          &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
+			df:          &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
 			columns:     map[string]string{"D": "X"},
 			expectError: true,
 		},
@@ -85,7 +85,7 @@ func TestDataFrameRename(t *testing.T) {
 		},
 		{
 			name:        "empty columns map",
-			df:          &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
+			df:          &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
 			columns:     map[string]string{},
 			expectError: true,
 		},
@@ -167,7 +167,7 @@ func TestDataFrameString(t *testing.T) {
 	}{
 		{
 			name: "basic dataframe",
-			df:   &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
+			df:   &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
 			expected: `+---+---+---+
 | A | B | C |
 +---+---+---+
@@ -179,7 +179,7 @@ func TestDataFrameString(t *testing.T) {
 		},
 		{
 			name: "empty dataframe",
-			df:   &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(), "B": mustSeries()}, ColumnOrder: []string{"A", "B"}},
+			df:   &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(), "B": mustSeries()}, ColumnOrder: []string{"A", "B"}},
 			expected: `+---+---+
 | A | B |
 +---+---+
@@ -189,7 +189,7 @@ func TestDataFrameString(t *testing.T) {
 		},
 		{
 			name: "mixed data types",
-			df:   &dataframe.DataFrame{Columns: map[string]*collection.Series{"Name": mustSeries("John", "Jane"), "Age": mustSeries(30, 25), "Active": mustSeries(true, false)}, ColumnOrder: []string{"Name", "Age", "Active"}},
+			df:   &dataframe.DataFrame{Columns: map[string]collection.Series{"Name": mustSeries("John", "Jane"), "Age": mustSeries(30, 25), "Active": mustSeries(true, false)}, ColumnOrder: []string{"Name", "Age", "Active"}},
 			expected: `+------+-----+--------+
 | Name | Age | Active |
 +------+-----+--------+
@@ -326,38 +326,38 @@ func TestDataFrameMerge(t *testing.T) {
 	}{
 		{
 			name:        "inner merge - basic case",
-			df1:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie")}, ColumnOrder: []string{"ID", "Name"}},
-			df2:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 4), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Age"}},
+			df1:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie")}, ColumnOrder: []string{"ID", "Name"}},
+			df2:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 4), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Age"}},
 			on:          "ID",
 			how:         dataframe.InnerMerge,
-			expected:    &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2), "Name": mustSeries("Alice", "Bob"), "Age": mustSeries(25, 30)}, ColumnOrder: []string{"ID", "Name", "Age"}},
+			expected:    &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2), "Name": mustSeries("Alice", "Bob"), "Age": mustSeries(25, 30)}, ColumnOrder: []string{"ID", "Name", "Age"}},
 			expectError: false,
 		},
 		{
 			name:        "left merge - keep all left rows",
-			df1:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie")}, ColumnOrder: []string{"ID", "Name"}},
-			df2:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2), "Age": mustSeries(25, 30)}, ColumnOrder: []string{"ID", "Age"}},
+			df1:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie")}, ColumnOrder: []string{"ID", "Name"}},
+			df2:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2), "Age": mustSeries(25, 30)}, ColumnOrder: []string{"ID", "Age"}},
 			on:          "ID",
 			how:         dataframe.LeftMerge,
-			expected:    &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie"), "Age": mustSeries(25, 30, nil)}, ColumnOrder: []string{"ID", "Name", "Age"}},
+			expected:    &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie"), "Age": mustSeries(25, 30, nil)}, ColumnOrder: []string{"ID", "Name", "Age"}},
 			expectError: false,
 		},
 		{
 			name:        "right merge - keep all right rows",
-			df1:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2), "Name": mustSeries("Alice", "Bob")}, ColumnOrder: []string{"ID", "Name"}},
-			df2:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 3), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Age"}},
+			df1:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2), "Name": mustSeries("Alice", "Bob")}, ColumnOrder: []string{"ID", "Name"}},
+			df2:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 3), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Age"}},
 			on:          "ID",
 			how:         dataframe.RightMerge,
-			expected:    &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", nil), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Name", "Age"}},
+			expected:    &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", nil), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Name", "Age"}},
 			expectError: false,
 		},
 		{
 			name:        "full merge - keep all rows",
-			df1:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie")}, ColumnOrder: []string{"ID", "Name"}},
-			df2:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 4), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Age"}},
+			df1:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 3), "Name": mustSeries("Alice", "Bob", "Charlie")}, ColumnOrder: []string{"ID", "Name"}},
+			df2:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 4), "Age": mustSeries(25, 30, 35)}, ColumnOrder: []string{"ID", "Age"}},
 			on:          "ID",
 			how:         dataframe.FullMerge,
-			expected:    &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1, 2, 3, 4), "Name": mustSeries("Alice", "Bob", "Charlie", nil), "Age": mustSeries(25, 30, nil, 35)}, ColumnOrder: []string{"ID", "Name", "Age"}},
+			expected:    &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1, 2, 3, 4), "Name": mustSeries("Alice", "Bob", "Charlie", nil), "Age": mustSeries(25, 30, nil, 35)}, ColumnOrder: []string{"ID", "Name", "Age"}},
 			expectError: false,
 		},
 		{
@@ -370,16 +370,16 @@ func TestDataFrameMerge(t *testing.T) {
 		},
 		{
 			name:        "column not found error",
-			df1:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1), "Name": mustSeries("Alice")}, ColumnOrder: []string{"ID", "Name"}},
-			df2:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"UserID": mustSeries(1), "Age": mustSeries(25)}, ColumnOrder: []string{"UserID", "Age"}},
+			df1:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1), "Name": mustSeries("Alice")}, ColumnOrder: []string{"ID", "Name"}},
+			df2:         &dataframe.DataFrame{Columns: map[string]collection.Series{"UserID": mustSeries(1), "Age": mustSeries(25)}, ColumnOrder: []string{"UserID", "Age"}},
 			on:          "ID",
 			how:         dataframe.InnerMerge,
 			expectError: true,
 		},
 		{
 			name:        "invalid merge type error",
-			df1:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1), "Name": mustSeries("Alice")}, ColumnOrder: []string{"ID", "Name"}},
-			df2:         &dataframe.DataFrame{Columns: map[string]*collection.Series{"ID": mustSeries(1), "Age": mustSeries(25)}, ColumnOrder: []string{"ID", "Age"}},
+			df1:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1), "Name": mustSeries("Alice")}, ColumnOrder: []string{"ID", "Name"}},
+			df2:         &dataframe.DataFrame{Columns: map[string]collection.Series{"ID": mustSeries(1), "Age": mustSeries(25)}, ColumnOrder: []string{"ID", "Age"}},
 			on:          "ID",
 			how:         "invalid",
 			expectError: true,
@@ -473,14 +473,14 @@ func TestDataFrameToCSV(t *testing.T) {
 	}{
 		{
 			name:        "basic csv string output",
-			df:          &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
+			df:          &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
 			filepath:    "",
 			expected:    "A,B,C\n1,2,3\n4,5,6\n",
 			expectError: false,
 		},
 		{
 			name:        "custom separator",
-			df:          &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
+			df:          &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1, 4), "B": mustSeries(2, 5), "C": mustSeries(3, 6)}, ColumnOrder: []string{"A", "B", "C"}},
 			filepath:    "",
 			separator:   ";",
 			expected:    "A;B;C\n1;2;3\n4;5;6\n",
@@ -488,7 +488,7 @@ func TestDataFrameToCSV(t *testing.T) {
 		},
 		{
 			name:        "mixed data types",
-			df:          &dataframe.DataFrame{Columns: map[string]*collection.Series{"Name": mustSeries("John", "Jane"), "Age": mustSeries(30, 25), "Active": mustSeries(true, false)}, ColumnOrder: []string{"Name", "Age", "Active"}},
+			df:          &dataframe.DataFrame{Columns: map[string]collection.Series{"Name": mustSeries("John", "Jane"), "Age": mustSeries(30, 25), "Active": mustSeries(true, false)}, ColumnOrder: []string{"Name", "Age", "Active"}},
 			filepath:    "",
 			expected:    "Name,Age,Active\nJohn,30,true\nJane,25,false\n",
 			expectError: false,
@@ -501,7 +501,7 @@ func TestDataFrameToCSV(t *testing.T) {
 		},
 		{
 			name:        "invalid file path",
-			df:          &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1), "B": mustSeries(2)}, ColumnOrder: []string{"A", "B"}},
+			df:          &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1), "B": mustSeries(2)}, ColumnOrder: []string{"A", "B"}},
 			filepath:    "/nonexistent/directory/file.csv",
 			expectError: true,
 		},
@@ -551,7 +551,7 @@ func TestDataFrameToCSV(t *testing.T) {
 
 	// Test successful file writing with temporary file
 	t.Run("successful file writing", func(t *testing.T) {
-		df := &dataframe.DataFrame{Columns: map[string]*collection.Series{"A": mustSeries(1, 3), "B": mustSeries(2, 4)}, ColumnOrder: []string{"A", "B"}}
+		df := &dataframe.DataFrame{Columns: map[string]collection.Series{"A": mustSeries(1, 3), "B": mustSeries(2, 4)}, ColumnOrder: []string{"A", "B"}}
 		tempFile := t.TempDir() + "/test.csv"
 		expected := "A,B\n1,2\n3,4\n"
 
@@ -579,8 +579,52 @@ func TestDataFrameToCSV(t *testing.T) {
 	})
 }
 
+// TestDataFrameNullHandling tests the null handling with boolean mask approach
+func TestDataFrameNullHandling(t *testing.T) {
+	t.Run("null values in series", func(t *testing.T) {
+		// Create a series with null values
+		series := mustSeries(1, nil, 3)
+		
+		// Check null detection
+		if !series.IsNull(1) {
+			t.Error("expected index 1 to be null")
+		}
+		if series.IsNull(0) {
+			t.Error("expected index 0 to not be null")
+		}
+		if series.IsNull(2) {
+			t.Error("expected index 2 to not be null")
+		}
+		
+		// Check NullCount
+		if series.NullCount() != 1 {
+			t.Errorf("expected null count 1, got %d", series.NullCount())
+		}
+	})
+
+	t.Run("null in dataframe display", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, nil, 3),
+				"B": mustSeries("x", "y", nil),
+			},
+			ColumnOrder: []string{"A", "B"},
+		}
+		
+		result := df.String()
+		// Verify "null" appears in the output
+		if !containsString(result, "null") {
+			t.Errorf("expected 'null' in output, got:\n%s", result)
+		}
+	})
+}
+
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsString(s[1:], substr) || s[:len(substr)] == substr)
+}
+
 // helpers
-func mustSeries(vals ...any) *collection.Series {
+func mustSeries(vals ...any) collection.Series {
 	s, err := collection.NewSeriesWithData(nil, vals)
 	if err != nil {
 		panic(err)

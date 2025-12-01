@@ -48,6 +48,36 @@ func (l *LocIndexer) At(rowLabel string, columnName string) (any, error) {
 	return series.At(rowIdx)
 }
 
+// IsNullAt returns whether the value at the given row label and column name is null
+func (l *LocIndexer) IsNullAt(rowLabel string, columnName string) (bool, error) {
+	if l.df == nil {
+		return false, errors.New("DataFrame is nil")
+	}
+
+	l.df.RLock()
+	defer l.df.RUnlock()
+
+	// Find row index from label
+	rowIdx := -1
+	for i, label := range l.df.Index {
+		if label == rowLabel {
+			rowIdx = i
+			break
+		}
+	}
+	if rowIdx == -1 {
+		return false, fmt.Errorf("row label '%s' not found in index", rowLabel)
+	}
+
+	// Get column
+	series, ok := l.df.Columns[columnName]
+	if !ok {
+		return false, fmt.Errorf("column '%s' not found", columnName)
+	}
+
+	return series.IsNull(rowIdx), nil
+}
+
 // Row returns a single row as a new DataFrame using row label
 func (l *LocIndexer) Row(rowLabel string) (*DataFrame, error) {
 	if l.df == nil {
@@ -69,17 +99,26 @@ func (l *LocIndexer) Row(rowLabel string) (*DataFrame, error) {
 		return nil, fmt.Errorf("row label '%s' not found in index", rowLabel)
 	}
 
-	// Create new DataFrame with single row
-	newCols := make(map[string]*collection.Series, len(l.df.ColumnOrder))
+	// Create new DataFrame with single row, preserving null masks
+	newCols := make(map[string]collection.Series, len(l.df.ColumnOrder))
 	for _, colName := range l.df.ColumnOrder {
 		series := l.df.Columns[colName]
+		isNull := series.IsNull(rowIdx)
 		val, err := series.At(rowIdx)
 		if err != nil {
 			return nil, fmt.Errorf("error accessing column %s: %w", colName, err)
 		}
-		newSeries, err := collection.NewSeriesWithData(series.DType(), []any{val})
-		if err != nil {
-			return nil, fmt.Errorf("error creating series for column %s: %w", colName, err)
+
+		// Create new series with single value, preserving null status
+		var newSeries collection.Series
+		if isNull {
+			newSeries = collection.NewSeriesOfType(series.DType(), 1)
+			newSeries.AppendNull()
+		} else {
+			newSeries = collection.NewSeriesOfType(series.DType(), 1)
+			if err := newSeries.Append(val); err != nil {
+				return nil, fmt.Errorf("error creating series for column %s: %w", colName, err)
+			}
 		}
 		newCols[colName] = newSeries
 	}
@@ -116,21 +155,24 @@ func (l *LocIndexer) Rows(rowLabels []string) (*DataFrame, error) {
 		}
 	}
 
-	// Create new DataFrame with selected rows
-	newCols := make(map[string]*collection.Series, len(l.df.ColumnOrder))
+	// Create new DataFrame with selected rows, preserving null masks
+	newCols := make(map[string]collection.Series, len(l.df.ColumnOrder))
 	for _, colName := range l.df.ColumnOrder {
 		series := l.df.Columns[colName]
-		values := make([]any, len(rowIndices))
-		for i, rowIdx := range rowIndices {
-			val, err := series.At(rowIdx)
-			if err != nil {
-				return nil, fmt.Errorf("error accessing column %s at row %d: %w", colName, rowIdx, err)
+		newSeries := collection.NewSeriesOfType(series.DType(), len(rowIndices))
+
+		for _, rowIdx := range rowIndices {
+			if series.IsNull(rowIdx) {
+				newSeries.AppendNull()
+			} else {
+				val, err := series.At(rowIdx)
+				if err != nil {
+					return nil, fmt.Errorf("error accessing column %s at row %d: %w", colName, rowIdx, err)
+				}
+				if err := newSeries.Append(val); err != nil {
+					return nil, fmt.Errorf("error appending to series for column %s: %w", colName, err)
+				}
 			}
-			values[i] = val
-		}
-		newSeries, err := collection.NewSeriesWithData(series.DType(), values)
-		if err != nil {
-			return nil, fmt.Errorf("error creating series for column %s: %w", colName, err)
 		}
 		newCols[colName] = newSeries
 	}
@@ -143,7 +185,7 @@ func (l *LocIndexer) Rows(rowLabels []string) (*DataFrame, error) {
 }
 
 // Col returns a single column as a Series reference
-func (l *LocIndexer) Col(columnName string) (*collection.Series, error) {
+func (l *LocIndexer) Col(columnName string) (collection.Series, error) {
 	if l.df == nil {
 		return nil, errors.New("DataFrame is nil")
 	}
@@ -176,7 +218,7 @@ func (l *LocIndexer) Cols(columnNames []string) (*DataFrame, error) {
 	}
 
 	// Create new DataFrame with selected columns (zero-copy - just reference same Series)
-	newCols := make(map[string]*collection.Series, len(columnNames))
+	newCols := make(map[string]collection.Series, len(columnNames))
 	for _, colName := range columnNames {
 		newCols[colName] = l.df.Columns[colName]
 	}
@@ -213,6 +255,31 @@ func (il *iLocIndexer) At(rowPos int, colPos int) (any, error) {
 	return series.At(rowPos)
 }
 
+// IsNullAt returns whether the value at the given row and column positions is null
+func (il *iLocIndexer) IsNullAt(rowPos int, colPos int) (bool, error) {
+	if il.df == nil {
+		return false, errors.New("DataFrame is nil")
+	}
+
+	il.df.RLock()
+	defer il.df.RUnlock()
+
+	// Validate column position
+	if colPos < 0 || colPos >= len(il.df.ColumnOrder) {
+		return false, fmt.Errorf("column position %d out of range [0, %d)", colPos, len(il.df.ColumnOrder))
+	}
+
+	colName := il.df.ColumnOrder[colPos]
+	series := il.df.Columns[colName]
+
+	// Validate row position
+	if rowPos < 0 || rowPos >= series.Len() {
+		return false, fmt.Errorf("row position %d out of range [0, %d)", rowPos, series.Len())
+	}
+
+	return series.IsNull(rowPos), nil
+}
+
 // Row returns a single row at the given position as a new DataFrame
 func (il *iLocIndexer) Row(rowPos int) (*DataFrame, error) {
 	if il.df == nil {
@@ -232,17 +299,26 @@ func (il *iLocIndexer) Row(rowPos int) (*DataFrame, error) {
 		return nil, fmt.Errorf("row position %d out of range [0, %d)", rowPos, rowCount)
 	}
 
-	// Create new DataFrame with single row
-	newCols := make(map[string]*collection.Series, len(il.df.ColumnOrder))
+	// Create new DataFrame with single row, preserving null masks
+	newCols := make(map[string]collection.Series, len(il.df.ColumnOrder))
 	for _, colName := range il.df.ColumnOrder {
 		series := il.df.Columns[colName]
+		isNull := series.IsNull(rowPos)
 		val, err := series.At(rowPos)
 		if err != nil {
 			return nil, fmt.Errorf("error accessing column %s: %w", colName, err)
 		}
-		newSeries, err := collection.NewSeriesWithData(series.DType(), []any{val})
-		if err != nil {
-			return nil, fmt.Errorf("error creating series for column %s: %w", colName, err)
+
+		// Create new series with single value, preserving null status
+		var newSeries collection.Series
+		if isNull {
+			newSeries = collection.NewSeriesOfType(series.DType(), 1)
+			newSeries.AppendNull()
+		} else {
+			newSeries = collection.NewSeriesOfType(series.DType(), 1)
+			if err := newSeries.Append(val); err != nil {
+				return nil, fmt.Errorf("error creating series for column %s: %w", colName, err)
+			}
 		}
 		newCols[colName] = newSeries
 	}
@@ -277,21 +353,24 @@ func (il *iLocIndexer) Rows(rowPositions []int) (*DataFrame, error) {
 		}
 	}
 
-	// Create new DataFrame with selected rows
-	newCols := make(map[string]*collection.Series, len(il.df.ColumnOrder))
+	// Create new DataFrame with selected rows, preserving null masks
+	newCols := make(map[string]collection.Series, len(il.df.ColumnOrder))
 	for _, colName := range il.df.ColumnOrder {
 		series := il.df.Columns[colName]
-		values := make([]any, len(rowPositions))
-		for i, rowPos := range rowPositions {
-			val, err := series.At(rowPos)
-			if err != nil {
-				return nil, fmt.Errorf("error accessing column %s at row %d: %w", colName, rowPos, err)
+		newSeries := collection.NewSeriesOfType(series.DType(), len(rowPositions))
+
+		for _, rowPos := range rowPositions {
+			if series.IsNull(rowPos) {
+				newSeries.AppendNull()
+			} else {
+				val, err := series.At(rowPos)
+				if err != nil {
+					return nil, fmt.Errorf("error accessing column %s at row %d: %w", colName, rowPos, err)
+				}
+				if err := newSeries.Append(val); err != nil {
+					return nil, fmt.Errorf("error appending to series for column %s: %w", colName, err)
+				}
 			}
-			values[i] = val
-		}
-		newSeries, err := collection.NewSeriesWithData(series.DType(), values)
-		if err != nil {
-			return nil, fmt.Errorf("error creating series for column %s: %w", colName, err)
 		}
 		newCols[colName] = newSeries
 	}
@@ -338,21 +417,24 @@ func (il *iLocIndexer) Range(start int, end int) (*DataFrame, error) {
 		rowPositions[i] = start + i
 	}
 
-	// Create new DataFrame with selected rows (inline to avoid double lock)
-	newCols := make(map[string]*collection.Series, len(il.df.ColumnOrder))
+	// Create new DataFrame with selected rows, preserving null masks
+	newCols := make(map[string]collection.Series, len(il.df.ColumnOrder))
 	for _, colName := range il.df.ColumnOrder {
 		series := il.df.Columns[colName]
-		values := make([]any, len(rowPositions))
-		for i, rowPos := range rowPositions {
-			val, err := series.At(rowPos)
-			if err != nil {
-				return nil, fmt.Errorf("error accessing column %s at row %d: %w", colName, rowPos, err)
+		newSeries := collection.NewSeriesOfType(series.DType(), len(rowPositions))
+
+		for _, rowPos := range rowPositions {
+			if series.IsNull(rowPos) {
+				newSeries.AppendNull()
+			} else {
+				val, err := series.At(rowPos)
+				if err != nil {
+					return nil, fmt.Errorf("error accessing column %s at row %d: %w", colName, rowPos, err)
+				}
+				if err := newSeries.Append(val); err != nil {
+					return nil, fmt.Errorf("error appending to series for column %s: %w", colName, err)
+				}
 			}
-			values[i] = val
-		}
-		newSeries, err := collection.NewSeriesWithData(series.DType(), values)
-		if err != nil {
-			return nil, fmt.Errorf("error creating series for column %s: %w", colName, err)
 		}
 		newCols[colName] = newSeries
 	}
@@ -371,7 +453,7 @@ func (il *iLocIndexer) Range(start int, end int) (*DataFrame, error) {
 }
 
 // Col returns a single column at the given position as a Series reference
-func (il *iLocIndexer) Col(colPos int) (*collection.Series, error) {
+func (il *iLocIndexer) Col(colPos int) (collection.Series, error) {
 	if il.df == nil {
 		return nil, errors.New("DataFrame is nil")
 	}
@@ -410,7 +492,7 @@ func (il *iLocIndexer) Cols(colPositions []int) (*DataFrame, error) {
 	}
 
 	// Create new DataFrame with selected columns (zero-copy)
-	newCols := make(map[string]*collection.Series, len(columnNames))
+	newCols := make(map[string]collection.Series, len(columnNames))
 	for _, colName := range columnNames {
 		newCols[colName] = il.df.Columns[colName]
 	}

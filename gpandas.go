@@ -58,8 +58,9 @@ func FloatColumn(col []any) ([]float64, error) {
 // - Validates all columns have the same length
 // - Ensures type definitions exist for all columns
 //
-// The data is then converted to the internal DataFrame format, performing type assertions
+// The data is then converted to the internal DataFrame format, creating typed Series
 // based on the specified column types (FloatCol, IntCol, StringCol, BoolCol).
+// Null values (nil) are properly tracked using the boolean mask approach.
 //
 // Parameters:
 //
@@ -103,29 +104,82 @@ func (GoPandas) DataFrame(columns []string, data []Column, columns_types map[str
 		}
 	}
 
-	// Create columnar DataFrame
-	cols := make(map[string]*collection.Series, len(columns))
+	// Create columnar DataFrame with typed Series
+	cols := make(map[string]collection.Series, len(columns))
 	for i, colName := range columns {
-		// Build series with dtype enforcement based on columns_types
-		var series *collection.Series
-		// Prepare values slice
-		values := make([]any, rowCount)
-		for j := 0; j < rowCount; j++ {
-			values[j] = data[i][j]
-		}
+		var series collection.Series
 		var err error
+
 		switch columns_types[colName].(type) {
 		case FloatCol:
-			series, err = collection.NewSeriesWithData(reflect.TypeOf(float64(0)), values)
+			// Create Float64Series
+			floatData := make([]float64, rowCount)
+			mask := make([]bool, rowCount)
+			for j := 0; j < rowCount; j++ {
+				if data[i][j] == nil {
+					mask[j] = true
+				} else if v, ok := data[i][j].(float64); ok {
+					floatData[j] = v
+				} else {
+					return nil, fmt.Errorf("type mismatch in column %s at row %d: expected float64, got %T", colName, j, data[i][j])
+				}
+			}
+			series, err = collection.NewFloat64SeriesFromData(floatData, mask)
+
 		case IntCol:
-			series, err = collection.NewSeriesWithData(reflect.TypeOf(int64(0)), values)
+			// Create Int64Series
+			intData := make([]int64, rowCount)
+			mask := make([]bool, rowCount)
+			for j := 0; j < rowCount; j++ {
+				if data[i][j] == nil {
+					mask[j] = true
+				} else if v, ok := data[i][j].(int64); ok {
+					intData[j] = v
+				} else {
+					return nil, fmt.Errorf("type mismatch in column %s at row %d: expected int64, got %T", colName, j, data[i][j])
+				}
+			}
+			series, err = collection.NewInt64SeriesFromData(intData, mask)
+
 		case StringCol:
-			series, err = collection.NewSeriesWithData(reflect.TypeOf(""), values)
+			// Create StringSeries
+			strData := make([]string, rowCount)
+			mask := make([]bool, rowCount)
+			for j := 0; j < rowCount; j++ {
+				if data[i][j] == nil {
+					mask[j] = true
+				} else if v, ok := data[i][j].(string); ok {
+					strData[j] = v
+				} else {
+					return nil, fmt.Errorf("type mismatch in column %s at row %d: expected string, got %T", colName, j, data[i][j])
+				}
+			}
+			series, err = collection.NewStringSeriesFromData(strData, mask)
+
 		case BoolCol:
-			series, err = collection.NewSeriesWithData(reflect.TypeOf(true), values)
+			// Create BoolSeries
+			boolData := make([]bool, rowCount)
+			mask := make([]bool, rowCount)
+			for j := 0; j < rowCount; j++ {
+				if data[i][j] == nil {
+					mask[j] = true
+				} else if v, ok := data[i][j].(bool); ok {
+					boolData[j] = v
+				} else {
+					return nil, fmt.Errorf("type mismatch in column %s at row %d: expected bool, got %T", colName, j, data[i][j])
+				}
+			}
+			series, err = collection.NewBoolSeriesFromData(boolData, mask)
+
 		default:
-			series, err = collection.NewSeriesWithData(nil, values)
+			// Fallback to AnySeries for unknown types
+			values := make([]any, rowCount)
+			for j := 0; j < rowCount; j++ {
+				values[j] = data[i][j]
+			}
+			series, err = collection.NewAnySeriesFromData(values, nil)
 		}
+
 		if err != nil {
 			return nil, fmt.Errorf("failed creating series for column %s: %w", colName, err)
 		}
@@ -149,11 +203,9 @@ func (GoPandas) DataFrame(columns []string, data []Column, columns_types map[str
 //
 // It initializes data columns based on the number of headers and populates them with the corresponding values from the records.
 //
-// If the number of columns in any row is inconsistent with the header, an error is returned.
+// If the number of columns in any row is inconsistent with the header, that row is skipped.
 //
-// The function also creates a map of column types, defaulting to StringCol for all columns.
-//
-// Finally, it calls the DataFrame constructor to create and return a DataFrame containing the data from the CSV file.
+// All values are stored as strings in StringSeries with proper null handling.
 //
 // Parameters:
 //
@@ -188,7 +240,7 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		Row   []string
 	}
 	rowChan := make(chan RowData, 100)                 // Buffered channel to hold rows
-	resultChan := make(chan [][]any, runtime.NumCPU()) // Channel to hold columnar data
+	resultChan := make(chan [][]string, runtime.NumCPU()) // Channel to hold columnar string data
 	var wg sync.WaitGroup
 
 	// Start workers for processing rows
@@ -198,9 +250,9 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 			defer wg.Done()
 
 			// Local column buffers
-			localData := make([][]any, columnCount)
+			localData := make([][]string, columnCount)
 			for i := range localData {
-				localData[i] = make([]any, 0, 100) // Preallocate some space
+				localData[i] = make([]string, 0, 100) // Preallocate some space
 			}
 
 			for row := range rowChan {
@@ -241,9 +293,9 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 	}()
 
 	// Combine results into columnar format
-	combinedData := make([][]any, columnCount)
+	combinedData := make([][]string, columnCount)
 	for i := range combinedData {
-		combinedData[i] = make([]any, 0)
+		combinedData[i] = make([]string, 0)
 	}
 
 	for localData := range resultChan {
@@ -252,16 +304,11 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		}
 	}
 
-	// Infer column types (default to string for now)
-	columnTypes := make(map[string]any, columnCount)
-	for _, header := range headers {
-		columnTypes[header] = StringCol{}
-	}
-
-	// Build Series per column
-	cols := make(map[string]*collection.Series, columnCount)
+	// Build StringSeries per column
+	cols := make(map[string]collection.Series, columnCount)
 	for i, header := range headers {
-		series, err := collection.NewSeriesWithData(nil, combinedData[i])
+		// Create StringSeries from string data (no nulls from CSV - empty strings are valid)
+		series, err := collection.NewStringSeriesFromData(combinedData[i], nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed creating series for column %s: %w", header, err)
 		}
@@ -279,4 +326,210 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 	}
 
 	return &dataframe.DataFrame{Columns: cols, ColumnOrder: append([]string(nil), headers...), Index: index}, nil
+}
+
+// Read_csv_typed reads a CSV file and creates typed Series based on the provided column types.
+//
+// This is similar to Read_csv but allows specifying column types for automatic type conversion.
+// Empty strings in the CSV are treated as null values for non-string types.
+//
+// Parameters:
+//
+//	filepath: A string representing the path to the CSV file to be read.
+//	columnTypes: A map defining the expected type for each column (FloatCol, IntCol, StringCol, BoolCol)
+//
+// Returns:
+//
+//	A pointer to a DataFrame containing the typed data from the CSV file, or an error if the operation fails.
+func (gp GoPandas) Read_csv_typed(filepath string, columnTypes map[string]any) (*dataframe.DataFrame, error) {
+	// First read as strings
+	df, err := gp.Read_csv(filepath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert columns to specified types
+	for colName, colType := range columnTypes {
+		series, ok := df.Columns[colName]
+		if !ok {
+			continue // Skip columns not in DataFrame
+		}
+
+		strSeries, ok := series.(*collection.StringSeries)
+		if !ok {
+			continue // Skip if not a StringSeries
+		}
+
+		rowCount := strSeries.Len()
+
+		switch colType.(type) {
+		case FloatCol:
+			floatData := make([]float64, rowCount)
+			mask := make([]bool, rowCount)
+			for i := 0; i < rowCount; i++ {
+				if strSeries.IsNull(i) {
+					mask[i] = true
+					continue
+				}
+				strVal, _ := strSeries.StringValue(i)
+				if strVal == "" {
+					mask[i] = true
+					continue
+				}
+				var f float64
+				_, err := fmt.Sscanf(strVal, "%f", &f)
+				if err != nil {
+					mask[i] = true
+				} else {
+					floatData[i] = f
+				}
+			}
+			newSeries, err := collection.NewFloat64SeriesFromData(floatData, mask)
+			if err != nil {
+				return nil, fmt.Errorf("failed converting column %s to float64: %w", colName, err)
+			}
+			df.Columns[colName] = newSeries
+
+		case IntCol:
+			intData := make([]int64, rowCount)
+			mask := make([]bool, rowCount)
+			for i := 0; i < rowCount; i++ {
+				if strSeries.IsNull(i) {
+					mask[i] = true
+					continue
+				}
+				strVal, _ := strSeries.StringValue(i)
+				if strVal == "" {
+					mask[i] = true
+					continue
+				}
+				var n int64
+				_, err := fmt.Sscanf(strVal, "%d", &n)
+				if err != nil {
+					mask[i] = true
+				} else {
+					intData[i] = n
+				}
+			}
+			newSeries, err := collection.NewInt64SeriesFromData(intData, mask)
+			if err != nil {
+				return nil, fmt.Errorf("failed converting column %s to int64: %w", colName, err)
+			}
+			df.Columns[colName] = newSeries
+
+		case BoolCol:
+			boolData := make([]bool, rowCount)
+			mask := make([]bool, rowCount)
+			for i := 0; i < rowCount; i++ {
+				if strSeries.IsNull(i) {
+					mask[i] = true
+					continue
+				}
+				strVal, _ := strSeries.StringValue(i)
+				if strVal == "" {
+					mask[i] = true
+					continue
+				}
+				switch strVal {
+				case "true", "True", "TRUE", "1":
+					boolData[i] = true
+				case "false", "False", "FALSE", "0":
+					boolData[i] = false
+				default:
+					mask[i] = true
+				}
+			}
+			newSeries, err := collection.NewBoolSeriesFromData(boolData, mask)
+			if err != nil {
+				return nil, fmt.Errorf("failed converting column %s to bool: %w", colName, err)
+			}
+			df.Columns[colName] = newSeries
+
+		case StringCol:
+			// Already a StringSeries, no conversion needed
+		}
+	}
+
+	return df, nil
+}
+
+// NewDataFrameFromSeries creates a DataFrame from a map of Series.
+//
+// Parameters:
+//
+//	columns: A map of column names to Series
+//	columnOrder: Optional slice specifying column order (uses map order if nil)
+//
+// Returns:
+//
+//	A pointer to a DataFrame, or an error if validation fails
+func NewDataFrameFromSeries(columns map[string]collection.Series, columnOrder []string) (*dataframe.DataFrame, error) {
+	if len(columns) == 0 {
+		return nil, errors.New("at least one column is required")
+	}
+
+	// Determine column order
+	if columnOrder == nil {
+		columnOrder = make([]string, 0, len(columns))
+		for name := range columns {
+			columnOrder = append(columnOrder, name)
+		}
+	}
+
+	// Validate all column names exist
+	for _, name := range columnOrder {
+		if _, ok := columns[name]; !ok {
+			return nil, fmt.Errorf("column '%s' not found in columns map", name)
+		}
+	}
+
+	// Validate all columns have same length
+	var rowCount int
+	for i, name := range columnOrder {
+		if i == 0 {
+			rowCount = columns[name].Len()
+		} else if columns[name].Len() != rowCount {
+			return nil, fmt.Errorf("inconsistent row count: column '%s' has %d rows, expected %d", name, columns[name].Len(), rowCount)
+		}
+	}
+
+	// Create default index
+	index := make([]string, rowCount)
+	for i := 0; i < rowCount; i++ {
+		index[i] = fmt.Sprintf("%d", i)
+	}
+
+	return &dataframe.DataFrame{
+		Columns:     columns,
+		ColumnOrder: columnOrder,
+		Index:       index,
+	}, nil
+}
+
+// NewEmptyDataFrame creates an empty DataFrame with specified column names and types.
+//
+// Parameters:
+//
+//	columns: A slice of column names
+//	columnTypes: A map of column names to their types (uses reflect.Type)
+//
+// Returns:
+//
+//	A pointer to an empty DataFrame with the specified structure
+func NewEmptyDataFrame(columns []string, columnTypes map[string]reflect.Type) *dataframe.DataFrame {
+	cols := make(map[string]collection.Series, len(columns))
+	for _, name := range columns {
+		dtype, ok := columnTypes[name]
+		if !ok {
+			cols[name] = collection.NewAnySeries(0)
+		} else {
+			cols[name] = collection.NewSeriesOfType(dtype, 0)
+		}
+	}
+
+	return &dataframe.DataFrame{
+		Columns:     cols,
+		ColumnOrder: append([]string(nil), columns...),
+		Index:       []string{},
+	}
 }

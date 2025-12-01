@@ -45,7 +45,7 @@ func GetMapKeys[K comparable, V any](input_map map[K]V) (collection.Set[K], erro
 
 type DataFrame struct {
 	sync.RWMutex
-	Columns     map[string]*collection.Series
+	Columns     map[string]collection.Series
 	ColumnOrder []string
 	Index       []string // Row labels, defaults to string representations of row numbers
 }
@@ -154,6 +154,7 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 //   - Data is aligned to the left within columns
 //   - Table borders and separators use ASCII characters
 //   - Each cell's content is automatically converted to string representation
+//   - Null values are displayed as "null"
 //   - A summary line showing dimensions ([rows x columns]) is appended
 //
 // The table format follows this pattern:
@@ -161,7 +162,7 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 //	+-----+-----+-----+
 //	| Col1| Col2| Col3|
 //	+-----+-----+-----+
-//	| val1| val2| val3|
+//	| val1| val2| null|
 //	| val4| val5| val6|
 //	+-----+-----+-----+
 //	[2 rows x 3 columns]
@@ -182,6 +183,7 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 //
 // Note:
 //   - All values are converted to strings using fmt.Sprintf("%v", val)
+//   - Null values are displayed as "null"
 //   - The table is rendered using the github.com/olekukonko/tablewriter package
 func (df *DataFrame) String() string {
 	if df == nil {
@@ -227,7 +229,10 @@ func (df *DataFrame) String() string {
 	for i := 0; i < displayRows; i++ {
 		stringRow := make([]string, len(df.ColumnOrder))
 		for j, colName := range df.ColumnOrder {
-			if val, err := df.Columns[colName].At(i); err == nil {
+			series := df.Columns[colName]
+			if series.IsNull(i) {
+				stringRow[j] = "null"
+			} else if val, err := series.At(i); err == nil {
 				stringRow[j] = fmt.Sprintf("%v", val)
 			} else {
 				stringRow[j] = ""
@@ -259,6 +264,7 @@ func (df *DataFrame) String() string {
 //   - error: nil if successful, otherwise an error describing what went wrong
 //
 // Note: If filepath is provided, the method returns ("", nil) on success
+// Null values are represented as empty strings in the CSV output.
 //
 // Example:
 //
@@ -312,8 +318,14 @@ func (df *DataFrame) ToCSV(filepath string, separator ...string) (string, error)
 			if i > 0 {
 				buf.WriteString(sep)
 			}
-			val, _ := df.Columns[colName].At(r)
-			buf.WriteString(fmt.Sprintf("%v", val))
+			series := df.Columns[colName]
+			if series.IsNull(r) {
+				// Null values are represented as empty strings
+				buf.WriteString("")
+			} else {
+				val, _ := series.At(r)
+				buf.WriteString(fmt.Sprintf("%v", val))
+			}
 		}
 		buf.WriteString("\n")
 	}
@@ -362,7 +374,7 @@ func (df *DataFrame) Select(columns ...string) (*DataFrame, error) {
 	}
 
 	// Create new DataFrame with selected columns (zero-copy - just reference same Series)
-	newCols := make(map[string]*collection.Series, len(columns))
+	newCols := make(map[string]collection.Series, len(columns))
 	for _, colName := range columns {
 		newCols[colName] = df.Columns[colName]
 	}
@@ -376,7 +388,7 @@ func (df *DataFrame) Select(columns ...string) (*DataFrame, error) {
 
 // SelectCol returns a single column as a Series reference.
 // This provides direct access to the underlying Series.
-func (df *DataFrame) SelectCol(column string) (*collection.Series, error) {
+func (df *DataFrame) SelectCol(column string) (collection.Series, error) {
 	if df == nil {
 		return nil, errors.New("DataFrame is nil")
 	}
