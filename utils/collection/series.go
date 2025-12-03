@@ -43,6 +43,9 @@ type Series interface {
 
 	// MaskCopy returns a copy of the null mask.
 	MaskCopy() []bool
+
+	// Slice returns a new Series containing elements from start (inclusive) to end (exclusive).
+	Slice(start, end int) (Series, error)
 }
 
 // -----------------------------------------------------------------------------
@@ -202,6 +205,26 @@ func (s *Float64Series) MaskCopy() []bool {
 	out := make([]bool, len(s.mask))
 	copy(out, s.mask)
 	return out
+}
+
+func (s *Float64Series) Slice(start, end int) (Series, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if start < 0 || end > len(s.data) || start > end {
+		return nil, errors.New("invalid slice bounds")
+	}
+
+	newData := make([]float64, end-start)
+	copy(newData, s.data[start:end])
+
+	newMask := make([]bool, end-start)
+	copy(newMask, s.mask[start:end])
+
+	return &Float64Series{
+		data: newData,
+		mask: newMask,
+	}, nil
 }
 
 // Float64Value returns the raw float64 value at index i (ignores null mask).
@@ -381,6 +404,26 @@ func (s *Int64Series) MaskCopy() []bool {
 	return out
 }
 
+func (s *Int64Series) Slice(start, end int) (Series, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if start < 0 || end > len(s.data) || start > end {
+		return nil, errors.New("invalid slice bounds")
+	}
+
+	newData := make([]int64, end-start)
+	copy(newData, s.data[start:end])
+
+	newMask := make([]bool, end-start)
+	copy(newMask, s.mask[start:end])
+
+	return &Int64Series{
+		data: newData,
+		mask: newMask,
+	}, nil
+}
+
 // Int64Value returns the raw int64 value at index i (ignores null mask).
 func (s *Int64Series) Int64Value(i int) (int64, error) {
 	s.mu.RLock()
@@ -556,6 +599,26 @@ func (s *StringSeries) MaskCopy() []bool {
 	out := make([]bool, len(s.mask))
 	copy(out, s.mask)
 	return out
+}
+
+func (s *StringSeries) Slice(start, end int) (Series, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if start < 0 || end > len(s.data) || start > end {
+		return nil, errors.New("invalid slice bounds")
+	}
+
+	newData := make([]string, end-start)
+	copy(newData, s.data[start:end])
+
+	newMask := make([]bool, end-start)
+	copy(newMask, s.mask[start:end])
+
+	return &StringSeries{
+		data: newData,
+		mask: newMask,
+	}, nil
 }
 
 // StringValue returns the raw string value at index i (ignores null mask).
@@ -735,6 +798,26 @@ func (s *BoolSeries) MaskCopy() []bool {
 	return out
 }
 
+func (s *BoolSeries) Slice(start, end int) (Series, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if start < 0 || end > len(s.data) || start > end {
+		return nil, errors.New("invalid slice bounds")
+	}
+
+	newData := make([]bool, end-start)
+	copy(newData, s.data[start:end])
+
+	newMask := make([]bool, end-start)
+	copy(newMask, s.mask[start:end])
+
+	return &BoolSeries{
+		data: newData,
+		mask: newMask,
+	}, nil
+}
+
 // BoolValue returns the raw bool value at index i (ignores null mask).
 func (s *BoolSeries) BoolValue(i int) (bool, error) {
 	s.mu.RLock()
@@ -909,6 +992,26 @@ func (s *AnySeries) MaskCopy() []bool {
 	out := make([]bool, len(s.mask))
 	copy(out, s.mask)
 	return out
+}
+
+func (s *AnySeries) Slice(start, end int) (Series, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if start < 0 || end > len(s.data) || start > end {
+		return nil, errors.New("invalid slice bounds")
+	}
+
+	newData := make([]any, end-start)
+	copy(newData, s.data[start:end])
+
+	newMask := make([]bool, end-start)
+	copy(newMask, s.mask[start:end])
+
+	return &AnySeries{
+		data: newData,
+		mask: newMask,
+	}, nil
 }
 
 // -----------------------------------------------------------------------------
