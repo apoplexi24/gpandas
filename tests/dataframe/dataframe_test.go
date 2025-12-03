@@ -584,7 +584,7 @@ func TestDataFrameNullHandling(t *testing.T) {
 	t.Run("null values in series", func(t *testing.T) {
 		// Create a series with null values
 		series := mustSeries(1, nil, 3)
-		
+
 		// Check null detection
 		if !series.IsNull(1) {
 			t.Error("expected index 1 to be null")
@@ -595,7 +595,7 @@ func TestDataFrameNullHandling(t *testing.T) {
 		if series.IsNull(2) {
 			t.Error("expected index 2 to not be null")
 		}
-		
+
 		// Check NullCount
 		if series.NullCount() != 1 {
 			t.Errorf("expected null count 1, got %d", series.NullCount())
@@ -610,11 +610,89 @@ func TestDataFrameNullHandling(t *testing.T) {
 			},
 			ColumnOrder: []string{"A", "B"},
 		}
-		
+
 		result := df.String()
 		// Verify "null" appears in the output
 		if !containsString(result, "null") {
 			t.Errorf("expected 'null' in output, got:\n%s", result)
+		}
+	})
+}
+
+func TestDataFrameHead(t *testing.T) {
+	df := &dataframe.DataFrame{
+		Columns: map[string]collection.Series{
+			"A": mustSeries(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+			"B": mustSeries(10, 20, 30, 40, 50, 60, 70, 80, 90, 100),
+		},
+		ColumnOrder: []string{"A", "B"},
+	}
+
+	t.Run("default head (5 rows)", func(t *testing.T) {
+		head := df.Head()
+		if head.Columns["A"].Len() != 5 {
+			t.Errorf("expected 5 rows, got %d", head.Columns["A"].Len())
+		}
+		val, _ := head.Columns["A"].At(4)
+		if val != float64(5) && val != int64(5) { // Handle type inference
+			t.Errorf("expected 5 at index 4, got %v", val)
+		}
+	})
+
+	t.Run("head with n=3", func(t *testing.T) {
+		head := df.Head(3)
+		if head.Columns["A"].Len() != 3 {
+			t.Errorf("expected 3 rows, got %d", head.Columns["A"].Len())
+		}
+		val, _ := head.Columns["A"].At(2)
+		if val != float64(3) && val != int64(3) {
+			t.Errorf("expected 3 at index 2, got %v", val)
+		}
+	})
+
+	t.Run("head with n > len", func(t *testing.T) {
+		head := df.Head(20)
+		if head.Columns["A"].Len() != 10 {
+			t.Errorf("expected 10 rows, got %d", head.Columns["A"].Len())
+		}
+	})
+}
+
+func TestDataFrameTail(t *testing.T) {
+	df := &dataframe.DataFrame{
+		Columns: map[string]collection.Series{
+			"A": mustSeries(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+			"B": mustSeries(10, 20, 30, 40, 50, 60, 70, 80, 90, 100),
+		},
+		ColumnOrder: []string{"A", "B"},
+	}
+
+	t.Run("default tail (5 rows)", func(t *testing.T) {
+		tail := df.Tail()
+		if tail.Columns["A"].Len() != 5 {
+			t.Errorf("expected 5 rows, got %d", tail.Columns["A"].Len())
+		}
+		val, _ := tail.Columns["A"].At(0)
+		if val != float64(6) && val != int64(6) {
+			t.Errorf("expected 6 at index 0, got %v", val)
+		}
+	})
+
+	t.Run("tail with n=3", func(t *testing.T) {
+		tail := df.Tail(3)
+		if tail.Columns["A"].Len() != 3 {
+			t.Errorf("expected 3 rows, got %d", tail.Columns["A"].Len())
+		}
+		val, _ := tail.Columns["A"].At(0)
+		if val != float64(8) && val != int64(8) {
+			t.Errorf("expected 8 at index 0, got %v", val)
+		}
+	})
+
+	t.Run("tail with n > len", func(t *testing.T) {
+		tail := df.Tail(20)
+		if tail.Columns["A"].Len() != 10 {
+			t.Errorf("expected 10 rows, got %d", tail.Columns["A"].Len())
 		}
 	})
 }

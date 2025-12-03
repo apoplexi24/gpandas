@@ -449,3 +449,99 @@ func (df *DataFrame) ResetIndex() {
 		df.Index[i] = fmt.Sprintf("%d", i)
 	}
 }
+
+// Head returns the first n rows of the DataFrame.
+// If n is not provided, it defaults to 5.
+func (df *DataFrame) Head(n ...int) *DataFrame {
+	if df == nil {
+		return nil
+	}
+
+	limit := 5
+	if len(n) > 0 {
+		limit = n[0]
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	rowCount := 0
+	if len(df.ColumnOrder) > 0 {
+		rowCount = df.Columns[df.ColumnOrder[0]].Len()
+	}
+
+	if limit > rowCount {
+		limit = rowCount
+	}
+	if limit < 0 {
+		limit = 0
+	}
+
+	newCols := make(map[string]collection.Series, len(df.Columns))
+	for name, series := range df.Columns {
+		newSeries, _ := series.Slice(0, limit)
+		newCols[name] = newSeries
+	}
+
+	newIndex := make([]string, limit)
+	if len(df.Index) >= limit {
+		copy(newIndex, df.Index[:limit])
+	} else {
+		// Should not happen if index is consistent with data
+		copy(newIndex, df.Index)
+	}
+
+	return &DataFrame{
+		Columns:     newCols,
+		ColumnOrder: append([]string(nil), df.ColumnOrder...),
+		Index:       newIndex,
+	}
+}
+
+// Tail returns the last n rows of the DataFrame.
+// If n is not provided, it defaults to 5.
+func (df *DataFrame) Tail(n ...int) *DataFrame {
+	if df == nil {
+		return nil
+	}
+
+	limit := 5
+	if len(n) > 0 {
+		limit = n[0]
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	rowCount := 0
+	if len(df.ColumnOrder) > 0 {
+		rowCount = df.Columns[df.ColumnOrder[0]].Len()
+	}
+
+	start := rowCount - limit
+	if start < 0 {
+		start = 0
+	}
+
+	newCols := make(map[string]collection.Series, len(df.Columns))
+	for name, series := range df.Columns {
+		newSeries, _ := series.Slice(start, rowCount)
+		newCols[name] = newSeries
+	}
+
+	newIndex := make([]string, rowCount-start)
+	if len(df.Index) >= rowCount {
+		copy(newIndex, df.Index[start:rowCount])
+	} else {
+		// Fallback if index is shorter than data (shouldn't happen)
+		if start < len(df.Index) {
+			copy(newIndex, df.Index[start:])
+		}
+	}
+
+	return &DataFrame{
+		Columns:     newCols,
+		ColumnOrder: append([]string(nil), df.ColumnOrder...),
+		Index:       newIndex,
+	}
+}
