@@ -545,3 +545,62 @@ func (df *DataFrame) Tail(n ...int) *DataFrame {
 		Index:       newIndex,
 	}
 }
+
+// Len returns the number of rows in the DataFrame.
+func (df *DataFrame) Len() int {
+	if df == nil || len(df.ColumnOrder) == 0 {
+		return 0
+	}
+	// Assume all columns have the same length
+	return df.Columns[df.ColumnOrder[0]].Len()
+}
+
+// Slice returns a new DataFrame containing only the rows specified by indices.
+func (df *DataFrame) Slice(indices []int) (*DataFrame, error) {
+	if df == nil {
+		return nil, errors.New("DataFrame is nil")
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	newCols := make(map[string]collection.Series, len(df.Columns))
+	for name, series := range df.Columns {
+		// We need a way to create a new Series from a list of indices.
+		// Since Series interface doesn't have a method for this, we might need to iterate and append.
+		// This is not efficient but works for now.
+		// TODO: Add SelectIndices to Series interface for better performance.
+
+		// Create new empty series of same type
+		newSeries := collection.NewSeriesOfTypeWithSize(series.DType(), len(indices))
+
+		for i, idx := range indices {
+			val, err := series.At(idx)
+			if err != nil {
+				return nil, err
+			}
+			if series.IsNull(idx) {
+				newSeries.SetNull(i)
+			} else {
+				newSeries.Set(i, val)
+			}
+		}
+		newCols[name] = newSeries
+	}
+
+	newIndex := make([]string, len(indices))
+	for i, idx := range indices {
+		if idx >= 0 && idx < len(df.Index) {
+			newIndex[i] = df.Index[idx]
+		} else {
+			// Handle out of bounds if necessary, though indices should be valid from GroupBy
+			newIndex[i] = ""
+		}
+	}
+
+	return &DataFrame{
+		Columns:     newCols,
+		ColumnOrder: append([]string(nil), df.ColumnOrder...),
+		Index:       newIndex,
+	}, nil
+}

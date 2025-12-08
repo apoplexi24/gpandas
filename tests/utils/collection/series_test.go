@@ -95,7 +95,7 @@ func TestSeriesNullHandling(t *testing.T) {
 
 func TestSeriesAppendNull(t *testing.T) {
 	s := collection.NewFloat64Series(0)
-	
+
 	// Append some values
 	s.Append(1.0)
 	s.AppendNull()
@@ -205,7 +205,10 @@ func TestTypedSeriesAccess(t *testing.T) {
 
 	// Test BoolSeries typed access
 	bs, _ := collection.NewBoolSeriesFromData([]bool{true, false, true}, nil)
-	bv, _ := bs.BoolValue(1)
+	bv, _ := bs.At(1)
+	if bv != false {
+		t.Errorf("expected At(1) to be false, got %v", bv)
+	}
 	if bv != false {
 		t.Errorf("expected BoolValue(1) to be false, got %v", bv)
 	}
@@ -213,7 +216,7 @@ func TestTypedSeriesAccess(t *testing.T) {
 
 func TestNewSeriesFromValues(t *testing.T) {
 	// Test with mixed int types (all should convert to int64)
-	s1, err := collection.NewSeriesFromValues([]any{1, 2, 3})
+	s1, err := collection.NewSeriesWithData(reflect.TypeOf(int64(0)), []any{1, 2, 3})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -222,7 +225,7 @@ func TestNewSeriesFromValues(t *testing.T) {
 	}
 
 	// Test with float64 values
-	s2, err := collection.NewSeriesFromValues([]any{1.0, 2.0, 3.0})
+	s2, err := collection.NewSeriesWithData(reflect.TypeOf(float64(0)), []any{1.0, 2.0, 3.0})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -231,7 +234,7 @@ func TestNewSeriesFromValues(t *testing.T) {
 	}
 
 	// Test with string values
-	s3, err := collection.NewSeriesFromValues([]any{"a", "b", "c"})
+	s3, err := collection.NewSeriesWithData(reflect.TypeOf(""), []any{"a", "b", "c"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -240,7 +243,7 @@ func TestNewSeriesFromValues(t *testing.T) {
 	}
 
 	// Test with bool values
-	s4, err := collection.NewSeriesFromValues([]any{true, false, true})
+	s4, err := collection.NewSeriesWithData(reflect.TypeOf(true), []any{true, false, true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +252,7 @@ func TestNewSeriesFromValues(t *testing.T) {
 	}
 
 	// Test with all nil values
-	s5, err := collection.NewSeriesFromValues([]any{nil, nil, nil})
+	s5, err := collection.NewSeriesWithData(reflect.TypeOf(nil), []any{nil, nil, nil})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
