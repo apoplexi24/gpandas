@@ -352,34 +352,6 @@ func (gb *GroupBy) Apply(f func(*DataFrame) (*DataFrame, error)) (*DataFrame, er
 		return nil, nil // Or empty DataFrame
 	}
 
-	// Combine results
-	// We need to implement a way to concatenate DataFrames.
-	// For now, let's manually merge them assuming they have same structure.
-
-	finalDF := resultParts[0]
-	// If there are more parts, we need to append them.
-	// Since we don't have a Concat/Append method on DataFrame that merges data,
-	// we will just return the first one for now or implement a simple merge.
-
-	// Simple merge implementation
-	for _, part := range resultParts[1:] {
-		// Append columns
-		for colName, series := range part.Columns {
-			finalSeries := finalDF.Columns[colName]
-			// We need Append on Series
-			n := series.Len()
-			for i := 0; i < n; i++ {
-				if series.IsNull(i) {
-					finalSeries.AppendNull()
-				} else {
-					val, _ := series.At(i)
-					finalSeries.Append(val)
-				}
-			}
-		}
-		// Append index
-		finalDF.Index = append(finalDF.Index, part.Index...)
-	}
-
-	return finalDF, nil
+	// Combine results using Concat
+	return Concat(resultParts, ConcatOptions{IgnoreIndex: true})
 }

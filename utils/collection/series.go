@@ -50,6 +50,9 @@ type Series interface {
 
 // NewSeriesOfType creates a new Series based on the provided reflect.Type.
 func NewSeriesOfType(t reflect.Type, capacity int) Series {
+	if t == nil {
+		return NewAnySeries(capacity)
+	}
 	switch t.Kind() {
 	case reflect.Float64:
 		return NewFloat64Series(capacity)

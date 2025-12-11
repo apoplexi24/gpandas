@@ -634,7 +634,7 @@ func TestDataFrameHead(t *testing.T) {
 			t.Errorf("expected 5 rows, got %d", head.Columns["A"].Len())
 		}
 		val, _ := head.Columns["A"].At(4)
-		if val != float64(5) && val != int64(5) { // Handle type inference
+		if val != 5 && val != float64(5) && val != int64(5) { // Handle type inference
 			t.Errorf("expected 5 at index 4, got %v", val)
 		}
 	})
@@ -645,7 +645,7 @@ func TestDataFrameHead(t *testing.T) {
 			t.Errorf("expected 3 rows, got %d", head.Columns["A"].Len())
 		}
 		val, _ := head.Columns["A"].At(2)
-		if val != float64(3) && val != int64(3) {
+		if val != 3 && val != float64(3) && val != int64(3) {
 			t.Errorf("expected 3 at index 2, got %v", val)
 		}
 	})
@@ -673,7 +673,7 @@ func TestDataFrameTail(t *testing.T) {
 			t.Errorf("expected 5 rows, got %d", tail.Columns["A"].Len())
 		}
 		val, _ := tail.Columns["A"].At(0)
-		if val != float64(6) && val != int64(6) {
+		if val != 6 && val != float64(6) && val != int64(6) {
 			t.Errorf("expected 6 at index 0, got %v", val)
 		}
 	})
@@ -684,7 +684,7 @@ func TestDataFrameTail(t *testing.T) {
 			t.Errorf("expected 3 rows, got %d", tail.Columns["A"].Len())
 		}
 		val, _ := tail.Columns["A"].At(0)
-		if val != float64(8) && val != int64(8) {
+		if val != 8 && val != float64(8) && val != int64(8) {
 			t.Errorf("expected 8 at index 0, got %v", val)
 		}
 	})

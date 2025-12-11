@@ -24,3 +24,7 @@ func read_csv_test() {
 	fmt.Printf("%f\n", elapsed.Seconds())
 
 }
+
+func main() {
+	read_csv_test()
+}
