@@ -604,3 +604,240 @@ func (df *DataFrame) Slice(indices []int) (*DataFrame, error) {
 		Index:       newIndex,
 	}, nil
 }
+
+// DropOptions configures the Drop operation.
+// Use Labels+Axis OR Index/Columns directly (not both).
+type DropOptions struct {
+	// Labels are the index or column labels to drop.
+	// A single label or slice of labels.
+	Labels []string
+
+	// Axis specifies whether to drop from the index (0) or columns (1).
+	// Default is 0 (index/rows).
+	Axis int
+
+	// Index is an alternative to specifying Labels with Axis=0.
+	// Specifies row labels to drop.
+	Index []string
+
+	// Columns is an alternative to specifying Labels with Axis=1.
+	// Specifies column names to drop.
+	Columns []string
+
+	// Inplace specifies whether to modify the DataFrame in place.
+	// If true, modifies in place and returns nil.
+	// If false (default), returns a new DataFrame.
+	Inplace bool
+
+	// Errors specifies how to handle missing labels.
+	// "raise" (default): raise an error if any labels are not found.
+	// "ignore": suppress errors for missing labels.
+	Errors string
+}
+
+// Drop removes specified labels from rows or columns.
+//
+// Remove rows or columns by specifying label names and corresponding axis,
+// or by directly specifying index or column names.
+//
+// Parameters:
+//   - opts: DropOptions struct configuring the drop operation
+//
+// Returns:
+//   - *DataFrame: new DataFrame with labels removed (nil if Inplace=true)
+//   - error: nil if successful, otherwise an error
+//
+// Example:
+//
+//	// Drop columns "A" and "B"
+//	result, err := df.Drop(dataframe.DropOptions{Columns: []string{"A", "B"}})
+//
+//	// Drop columns using Labels and Axis
+//	result, err := df.Drop(dataframe.DropOptions{Labels: []string{"A"}, Axis: 1})
+//
+//	// Drop rows by index label
+//	result, err := df.Drop(dataframe.DropOptions{Index: []string{"0", "2"}})
+//
+//	// Drop in place
+//	_, err := df.Drop(dataframe.DropOptions{Columns: []string{"A"}, Inplace: true})
+//
+//	// Ignore missing labels
+//	result, err := df.Drop(dataframe.DropOptions{Columns: []string{"X"}, Errors: "ignore"})
+func (df *DataFrame) Drop(opts DropOptions) (*DataFrame, error) {
+	if df == nil {
+		return nil, errors.New("DataFrame is nil")
+	}
+
+	// Default errors mode is "raise"
+	if opts.Errors == "" {
+		opts.Errors = "raise"
+	}
+
+	// Validate errors option
+	if opts.Errors != "raise" && opts.Errors != "ignore" {
+		return nil, fmt.Errorf("errors must be 'raise' or 'ignore', got '%s'", opts.Errors)
+	}
+
+	// Determine what to drop based on options
+	var labelsToDrop []string
+	dropColumns := false
+
+	if len(opts.Columns) > 0 {
+		// Direct column specification takes priority
+		labelsToDrop = opts.Columns
+		dropColumns = true
+	} else if len(opts.Index) > 0 {
+		// Direct index specification
+		labelsToDrop = opts.Index
+		dropColumns = false
+	} else if len(opts.Labels) > 0 {
+		// Use Labels + Axis
+		labelsToDrop = opts.Labels
+		dropColumns = opts.Axis == 1
+	} else {
+		// Nothing to drop - return copy or self
+		if opts.Inplace {
+			return nil, nil
+		}
+		return df.copy(), nil
+	}
+
+	if dropColumns {
+		return df.dropColumns(labelsToDrop, opts.Errors, opts.Inplace)
+	}
+	return df.dropRows(labelsToDrop, opts.Errors, opts.Inplace)
+}
+
+// dropColumns removes the specified columns from the DataFrame.
+func (df *DataFrame) dropColumns(columns []string, errors string, inplace bool) (*DataFrame, error) {
+	df.Lock()
+	defer df.Unlock()
+
+	// Create a set of columns to drop
+	dropSet := make(map[string]bool, len(columns))
+	for _, col := range columns {
+		dropSet[col] = true
+	}
+
+	// Check if all columns exist (if errors == "raise")
+	if errors == "raise" {
+		for _, col := range columns {
+			if _, ok := df.Columns[col]; !ok {
+				return nil, fmt.Errorf("column '%s' not found in DataFrame", col)
+			}
+		}
+	}
+
+	if inplace {
+		// Modify in place
+		for _, col := range columns {
+			delete(df.Columns, col)
+		}
+		// Update column order
+		newOrder := make([]string, 0, len(df.ColumnOrder))
+		for _, col := range df.ColumnOrder {
+			if !dropSet[col] {
+				newOrder = append(newOrder, col)
+			}
+		}
+		df.ColumnOrder = newOrder
+		return nil, nil
+	}
+
+	// Create new DataFrame
+	newCols := make(map[string]collection.Series, len(df.Columns)-len(columns))
+	newOrder := make([]string, 0, len(df.ColumnOrder)-len(columns))
+
+	for _, col := range df.ColumnOrder {
+		if !dropSet[col] {
+			newCols[col] = df.Columns[col]
+			newOrder = append(newOrder, col)
+		}
+	}
+
+	return &DataFrame{
+		Columns:     newCols,
+		ColumnOrder: newOrder,
+		Index:       append([]string(nil), df.Index...),
+	}, nil
+}
+
+// dropRows removes rows with the specified index labels from the DataFrame.
+func (df *DataFrame) dropRows(indexLabels []string, errorsMode string, inplace bool) (*DataFrame, error) {
+	df.Lock()
+	defer df.Unlock()
+
+	// Create a set of index labels to drop
+	dropSet := make(map[string]bool, len(indexLabels))
+	for _, label := range indexLabels {
+		dropSet[label] = true
+	}
+
+	// Check if all index labels exist (if errors == "raise")
+	if errorsMode == "raise" {
+		indexSet := make(map[string]bool, len(df.Index))
+		for _, idx := range df.Index {
+			indexSet[idx] = true
+		}
+		for _, label := range indexLabels {
+			if !indexSet[label] {
+				return nil, fmt.Errorf("index label '%s' not found in DataFrame", label)
+			}
+		}
+	}
+
+	// Find indices of rows to keep
+	keepIndices := make([]int, 0, len(df.Index))
+	newIndex := make([]string, 0, len(df.Index))
+	for i, idx := range df.Index {
+		if !dropSet[idx] {
+			keepIndices = append(keepIndices, i)
+			newIndex = append(newIndex, idx)
+		}
+	}
+
+	// Create new series with only the kept rows
+	newCols := make(map[string]collection.Series, len(df.Columns))
+	for name, series := range df.Columns {
+		newSeries := collection.NewSeriesOfTypeWithSize(series.DType(), len(keepIndices))
+		for newIdx, oldIdx := range keepIndices {
+			if series.IsNull(oldIdx) {
+				newSeries.SetNull(newIdx)
+			} else {
+				val, _ := series.At(oldIdx)
+				newSeries.Set(newIdx, val)
+			}
+		}
+		newCols[name] = newSeries
+	}
+
+	if inplace {
+		// Replace DataFrame contents
+		df.Columns = newCols
+		df.Index = newIndex
+		return nil, nil
+	}
+
+	return &DataFrame{
+		Columns:     newCols,
+		ColumnOrder: append([]string(nil), df.ColumnOrder...),
+		Index:       newIndex,
+	}, nil
+}
+
+// copy creates a shallow copy of the DataFrame.
+func (df *DataFrame) copy() *DataFrame {
+	df.RLock()
+	defer df.RUnlock()
+
+	newCols := make(map[string]collection.Series, len(df.Columns))
+	for k, v := range df.Columns {
+		newCols[k] = v
+	}
+
+	return &DataFrame{
+		Columns:     newCols,
+		ColumnOrder: append([]string(nil), df.ColumnOrder...),
+		Index:       append([]string(nil), df.Index...),
+	}
+}

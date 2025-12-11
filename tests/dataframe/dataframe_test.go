@@ -709,3 +709,338 @@ func mustSeries(vals ...any) collection.Series {
 	}
 	return s
 }
+
+func TestDataFrameDrop(t *testing.T) {
+	t.Run("drop single column", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2, 3),
+				"B": mustSeries(4, 5, 6),
+				"C": mustSeries(7, 8, 9),
+			},
+			ColumnOrder: []string{"A", "B", "C"},
+			Index:       []string{"0", "1", "2"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Columns: []string{"B"}})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if len(result.ColumnOrder) != 2 {
+			t.Errorf("expected 2 columns, got %d", len(result.ColumnOrder))
+		}
+		if !strSliceEqual(result.ColumnOrder, []string{"A", "C"}) {
+			t.Errorf("expected columns [A, C], got %v", result.ColumnOrder)
+		}
+	})
+
+	t.Run("drop multiple columns", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+				"B": mustSeries(3, 4),
+				"C": mustSeries(5, 6),
+				"D": mustSeries(7, 8),
+			},
+			ColumnOrder: []string{"A", "B", "C", "D"},
+			Index:       []string{"0", "1"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Columns: []string{"A", "C"}})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !strSliceEqual(result.ColumnOrder, []string{"B", "D"}) {
+			t.Errorf("expected columns [B, D], got %v", result.ColumnOrder)
+		}
+	})
+
+	t.Run("drop columns using labels and axis", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+				"B": mustSeries(3, 4),
+			},
+			ColumnOrder: []string{"A", "B"},
+			Index:       []string{"0", "1"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Labels: []string{"A"}, Axis: 1})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !strSliceEqual(result.ColumnOrder, []string{"B"}) {
+			t.Errorf("expected columns [B], got %v", result.ColumnOrder)
+		}
+	})
+
+	t.Run("drop rows by index label", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2, 3),
+				"B": mustSeries(4, 5, 6),
+			},
+			ColumnOrder: []string{"A", "B"},
+			Index:       []string{"row0", "row1", "row2"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Index: []string{"row1"}})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if result.Len() != 2 {
+			t.Errorf("expected 2 rows, got %d", result.Len())
+		}
+		if !strSliceEqual(result.Index, []string{"row0", "row2"}) {
+			t.Errorf("expected index [row0, row2], got %v", result.Index)
+		}
+		// Verify data
+		val, _ := result.Columns["A"].At(0)
+		if val != 1 && val != int64(1) && val != float64(1) {
+			t.Errorf("expected first row value 1, got %v", val)
+		}
+		val, _ = result.Columns["A"].At(1)
+		if val != 3 && val != int64(3) && val != float64(3) {
+			t.Errorf("expected second row value 3, got %v", val)
+		}
+	})
+
+	t.Run("drop rows using labels and axis 0", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2, 3),
+			},
+			ColumnOrder: []string{"A"},
+			Index:       []string{"0", "1", "2"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Labels: []string{"0", "2"}, Axis: 0})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if result.Len() != 1 {
+			t.Errorf("expected 1 row, got %d", result.Len())
+		}
+		if !strSliceEqual(result.Index, []string{"1"}) {
+			t.Errorf("expected index [1], got %v", result.Index)
+		}
+	})
+
+	t.Run("drop inplace columns", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+				"B": mustSeries(3, 4),
+				"C": mustSeries(5, 6),
+			},
+			ColumnOrder: []string{"A", "B", "C"},
+			Index:       []string{"0", "1"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Columns: []string{"B"}, Inplace: true})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if result != nil {
+			t.Error("expected nil result for inplace operation")
+		}
+		if !strSliceEqual(df.ColumnOrder, []string{"A", "C"}) {
+			t.Errorf("expected columns [A, C], got %v", df.ColumnOrder)
+		}
+		if _, ok := df.Columns["B"]; ok {
+			t.Error("column B should have been removed")
+		}
+	})
+
+	t.Run("drop inplace rows", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2, 3),
+			},
+			ColumnOrder: []string{"A"},
+			Index:       []string{"0", "1", "2"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Index: []string{"1"}, Inplace: true})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if result != nil {
+			t.Error("expected nil result for inplace operation")
+		}
+		if df.Len() != 2 {
+			t.Errorf("expected 2 rows, got %d", df.Len())
+		}
+	})
+
+	t.Run("drop non-existent column with errors raise", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+			},
+			ColumnOrder: []string{"A"},
+			Index:       []string{"0", "1"},
+		}
+
+		_, err := df.Drop(dataframe.DropOptions{Columns: []string{"X"}})
+		if err == nil {
+			t.Error("expected error for non-existent column")
+		}
+	})
+
+	t.Run("drop non-existent column with errors ignore", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+				"B": mustSeries(3, 4),
+			},
+			ColumnOrder: []string{"A", "B"},
+			Index:       []string{"0", "1"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Columns: []string{"X", "A"}, Errors: "ignore"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if !strSliceEqual(result.ColumnOrder, []string{"B"}) {
+			t.Errorf("expected columns [B], got %v", result.ColumnOrder)
+		}
+	})
+
+	t.Run("drop non-existent row with errors raise", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+			},
+			ColumnOrder: []string{"A"},
+			Index:       []string{"0", "1"},
+		}
+
+		_, err := df.Drop(dataframe.DropOptions{Index: []string{"nonexistent"}})
+		if err == nil {
+			t.Error("expected error for non-existent index label")
+		}
+	})
+
+	t.Run("drop non-existent row with errors ignore", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2, 3),
+			},
+			ColumnOrder: []string{"A"},
+			Index:       []string{"0", "1", "2"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{Index: []string{"nonexistent", "1"}, Errors: "ignore"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if result.Len() != 2 {
+			t.Errorf("expected 2 rows, got %d", result.Len())
+		}
+	})
+
+	t.Run("drop from nil dataframe", func(t *testing.T) {
+		var df *dataframe.DataFrame = nil
+
+		_, err := df.Drop(dataframe.DropOptions{Columns: []string{"A"}})
+		if err == nil {
+			t.Error("expected error for nil DataFrame")
+		}
+	})
+
+	t.Run("drop with empty labels", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+				"B": mustSeries(3, 4),
+			},
+			ColumnOrder: []string{"A", "B"},
+			Index:       []string{"0", "1"},
+		}
+
+		result, err := df.Drop(dataframe.DropOptions{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Should return a copy with all data intact
+		if !strSliceEqual(result.ColumnOrder, []string{"A", "B"}) {
+			t.Errorf("expected columns [A, B], got %v", result.ColumnOrder)
+		}
+	})
+
+	t.Run("drop with invalid errors option", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+			},
+			ColumnOrder: []string{"A"},
+			Index:       []string{"0", "1"},
+		}
+
+		_, err := df.Drop(dataframe.DropOptions{Columns: []string{"A"}, Errors: "invalid"})
+		if err == nil {
+			t.Error("expected error for invalid errors option")
+		}
+	})
+
+	t.Run("columns takes priority over labels+axis", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+				"B": mustSeries(3, 4),
+			},
+			ColumnOrder: []string{"A", "B"},
+			Index:       []string{"0", "1"},
+		}
+
+		// When both Columns and Labels+Axis are specified, Columns should take priority
+		result, err := df.Drop(dataframe.DropOptions{
+			Columns: []string{"A"},
+			Labels:  []string{"0"}, // This would drop row "0" if Columns wasn't specified
+			Axis:    0,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Should have dropped column A, not row 0
+		if !strSliceEqual(result.ColumnOrder, []string{"B"}) {
+			t.Errorf("expected columns [B], got %v", result.ColumnOrder)
+		}
+		if result.Len() != 2 {
+			t.Errorf("expected 2 rows, got %d", result.Len())
+		}
+	})
+
+	t.Run("original dataframe unchanged after non-inplace drop", func(t *testing.T) {
+		df := &dataframe.DataFrame{
+			Columns: map[string]collection.Series{
+				"A": mustSeries(1, 2),
+				"B": mustSeries(3, 4),
+			},
+			ColumnOrder: []string{"A", "B"},
+			Index:       []string{"0", "1"},
+		}
+
+		_, err := df.Drop(dataframe.DropOptions{Columns: []string{"A"}})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Original should be unchanged
+		if !strSliceEqual(df.ColumnOrder, []string{"A", "B"}) {
+			t.Errorf("original should have columns [A, B], got %v", df.ColumnOrder)
+		}
+	})
+}
