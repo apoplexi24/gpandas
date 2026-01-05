@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/apoplexi24/gpandas/utils/collection"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 )
 
 type GoPandas struct{}
@@ -103,7 +105,7 @@ func (df *DataFrame) Rename(columns map[string]string) error {
 		return errors.New("'columns' slice is empty. Slice of Maps to declare columns to rename is required")
 	}
 
-	keys, err := GetMapKeys[string, string](columns)
+	keys, err := GetMapKeys(columns)
 	if err != nil {
 		return err
 	}
@@ -191,21 +193,18 @@ func (df *DataFrame) String() string {
 	}
 
 	var buf bytes.Buffer
-	table := tablewriter.NewWriter(&buf)
-
-	// Set table properties
-	table.SetAutoWrapText(false)
-	table.SetAutoFormatHeaders(false)
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-	table.SetCenterSeparator("+")
-	table.SetColumnSeparator("|")
-	table.SetRowSeparator("-")
-	table.SetHeaderLine(true)
-	table.SetBorder(true)
+	table := tablewriter.NewTable(
+		&buf,
+		tablewriter.WithSymbols(tw.NewSymbols(tw.StyleASCII)),
+		tablewriter.WithHeaderAlignment(tw.AlignLeft),
+		tablewriter.WithRowAlignment(tw.AlignLeft),
+		tablewriter.WithHeaderAutoFormat(tw.Off),
+		tablewriter.WithHeaderAutoWrap(tw.WrapNone),
+		tablewriter.WithRowAutoWrap(tw.WrapNone),
+	)
 
 	// Set headers using the DataFrame's ColumnOrder
-	table.SetHeader(df.ColumnOrder)
+	table.Header(df.ColumnOrder)
 
 	// Determine number of rows using the first column's length (min length across columns)
 	rowCount := 0
@@ -238,7 +237,7 @@ func (df *DataFrame) String() string {
 				stringRow[j] = ""
 			}
 		}
-		table.Append(stringRow)
+		_ = table.Append(stringRow)
 	}
 
 	// Add row count information.
@@ -249,8 +248,19 @@ func (df *DataFrame) String() string {
 	}
 
 	// Render the table and return the string representation
-	table.Render()
-	return buf.String() + shape + "\n"
+	_ = table.Render()
+	rendered := buf.String()
+
+	// tablewriter v1 does not print the closing/bottom border when the table has
+	// headers but no data rows. Preserve the legacy gpandas output for this case.
+	if rowCount == 0 {
+		if nl := strings.IndexByte(rendered, '\n'); nl != -1 {
+			topBorder := rendered[:nl]
+			rendered += topBorder + "\n"
+		}
+	}
+
+	return rendered + shape + "\n"
 }
 
 // ToCSV converts the DataFrame to a CSV string representation or writes it to a file.
