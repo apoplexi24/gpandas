@@ -8,7 +8,9 @@ require (
 	cloud.google.com/go/bigquery v1.65.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/denisenkom/go-mssqldb v0.12.3
+	github.com/go-echarts/go-echarts/v2 v2.7.0
 	github.com/joho/godotenv v1.5.1
+	github.com/leanovate/gopter v0.2.11
 	github.com/lib/pq v1.10.9
 	google.golang.org/api v0.211.0
 )
