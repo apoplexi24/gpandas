@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/apoplexi24/gpandas/plot"
 	"github.com/apoplexi24/gpandas/utils/collection"
 
 	"github.com/olekukonko/tablewriter"
@@ -850,4 +851,172 @@ func (df *DataFrame) copy() *DataFrame {
 		ColumnOrder: append([]string(nil), df.ColumnOrder...),
 		Index:       append([]string(nil), df.Index...),
 	}
+}
+
+// PlotBar creates a bar chart from DataFrame columns.
+// xCol specifies the column to use for x-axis labels.
+// yCol specifies the column to use for y-axis values (must be numeric).
+// opts configures chart appearance and output location.
+//
+// Returns an error if:
+// - DataFrame is empty
+// - Either column does not exist
+// - yCol is not numeric (int64 or float64)
+// - Chart generation or file write fails
+//
+// Example:
+//
+//	opts := &plot.ChartOptions{
+//	    Title: "Sales by Category",
+//	    Width: 800,
+//	    Height: 600,
+//	    OutputPath: "output/bar_chart.html",
+//	}
+//	err := df.PlotBar("category", "sales", opts)
+func (df *DataFrame) PlotBar(xCol, yCol string, opts *plot.ChartOptions) error {
+	if df == nil {
+		return errors.New("PlotBar: DataFrame is nil")
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	// Validate DataFrame is not empty
+	if len(df.ColumnOrder) == 0 || df.Len() == 0 {
+		return errors.New("PlotBar: cannot plot empty DataFrame")
+	}
+
+	// Validate columns exist
+	xSeries, xExists := df.Columns[xCol]
+	if !xExists {
+		return fmt.Errorf("PlotBar: column '%s' not found in DataFrame", xCol)
+	}
+
+	ySeries, yExists := df.Columns[yCol]
+	if !yExists {
+		return fmt.Errorf("PlotBar: column '%s' not found in DataFrame", yCol)
+	}
+
+	// Delegate to plot package
+	if err := plot.RenderBar(xSeries, ySeries, opts); err != nil {
+		return fmt.Errorf("PlotBar: %w", err)
+	}
+
+	return nil
+}
+
+// PlotPie creates a pie chart from DataFrame columns.
+// labelCol specifies the column to use for pie slice labels.
+// valueCol specifies the column to use for pie slice values (must be numeric).
+// opts configures chart appearance and output location.
+//
+// Returns an error if:
+// - DataFrame is empty
+// - Either column does not exist
+// - valueCol is not numeric (int64 or float64)
+// - Chart generation or file write fails
+//
+// Example:
+//
+//	opts := &plot.ChartOptions{
+//	    Title: "Market Share",
+//	    Width: 800,
+//	    Height: 600,
+//	    OutputPath: "output/pie_chart.html",
+//	}
+//	err := df.PlotPie("product", "revenue", opts)
+func (df *DataFrame) PlotPie(labelCol, valueCol string, opts *plot.ChartOptions) error {
+	if df == nil {
+		return errors.New("PlotPie: DataFrame is nil")
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	// Validate DataFrame is not empty
+	if len(df.ColumnOrder) == 0 || df.Len() == 0 {
+		return errors.New("PlotPie: cannot plot empty DataFrame")
+	}
+
+	// Validate columns exist
+	labelSeries, labelExists := df.Columns[labelCol]
+	if !labelExists {
+		return fmt.Errorf("PlotPie: column '%s' not found in DataFrame", labelCol)
+	}
+
+	valueSeries, valueExists := df.Columns[valueCol]
+	if !valueExists {
+		return fmt.Errorf("PlotPie: column '%s' not found in DataFrame", valueCol)
+	}
+
+	// Delegate to plot package
+	if err := plot.RenderPie(labelSeries, valueSeries, opts); err != nil {
+		return fmt.Errorf("PlotPie: %w", err)
+	}
+
+	return nil
+}
+
+// PlotLine creates a line chart from DataFrame columns.
+// xCol specifies the column to use for x-axis labels.
+// yCols specifies one or more columns to use for y-axis values (must be numeric).
+// opts configures chart appearance and output location.
+//
+// Returns an error if:
+// - DataFrame is empty
+// - Any column does not exist
+// - Any yCol is not numeric (int64 or float64)
+// - Chart generation or file write fails
+//
+// Example:
+//
+//	// Single series
+//	opts := &plot.ChartOptions{
+//	    Title: "Temperature Over Time",
+//	    OutputPath: "output/line_chart.html",
+//	}
+//	err := df.PlotLine("date", []string{"temperature"}, opts)
+//
+//	// Multiple series
+//	err := df.PlotLine("date", []string{"temp_min", "temp_max"}, opts)
+func (df *DataFrame) PlotLine(xCol string, yCols []string, opts *plot.ChartOptions) error {
+	if df == nil {
+		return errors.New("PlotLine: DataFrame is nil")
+	}
+
+	df.RLock()
+	defer df.RUnlock()
+
+	// Validate DataFrame is not empty
+	if len(df.ColumnOrder) == 0 || df.Len() == 0 {
+		return errors.New("PlotLine: cannot plot empty DataFrame")
+	}
+
+	// Validate yCols is not empty
+	if len(yCols) == 0 {
+		return errors.New("PlotLine: yCols cannot be empty")
+	}
+
+	// Validate x column exists
+	xSeries, xExists := df.Columns[xCol]
+	if !xExists {
+		return fmt.Errorf("PlotLine: column '%s' not found in DataFrame", xCol)
+	}
+
+	// Validate all y columns exist and extract Series
+	ySeriesList := make([]collection.Series, len(yCols))
+	for i, yCol := range yCols {
+		ySeries, yExists := df.Columns[yCol]
+		if !yExists {
+			return fmt.Errorf("PlotLine: column '%s' not found in DataFrame", yCol)
+		}
+		ySeriesList[i] = ySeries
+	}
+
+	// Delegate to plot package
+	if err := plot.RenderLine(xSeries, ySeriesList, yCols, opts); err != nil {
+		return fmt.Errorf("PlotLine: %w", err)
+	}
+
+	return nil
 }
