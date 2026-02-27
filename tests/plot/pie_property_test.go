@@ -13,55 +13,55 @@ import (
 	"github.com/leanovate/gopter/prop"
 )
 
-// Property 2: Valid Chart Generation (bar charts)
-// For any DataFrame with valid columns of compatible types, calling PlotBar
+// Property 2: Valid Chart Generation (pie charts)
+// For any DataFrame with valid columns of compatible types, calling PlotPie
 // should successfully generate a chart without error.
-func TestProperty2_ValidChartGeneration_BarCharts(t *testing.T) {
+func TestProperty2_ValidChartGeneration_PieCharts(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
-	properties.Property("valid bar chart generation succeeds", prop.ForAll(
-		func(xLabels []string, yValues []float64) bool {
+	properties.Property("valid pie chart generation succeeds", prop.ForAll(
+		func(labels []string, values []float64) bool {
 			// Skip empty data
-			if len(xLabels) == 0 || len(yValues) == 0 {
+			if len(labels) == 0 || len(values) == 0 {
 				return true
 			}
 
 			// Ensure equal lengths
-			minLen := len(xLabels)
-			if len(yValues) < minLen {
-				minLen = len(yValues)
+			minLen := len(labels)
+			if len(values) < minLen {
+				minLen = len(values)
 			}
-			xLabels = xLabels[:minLen]
-			yValues = yValues[:minLen]
+			labels = labels[:minLen]
+			values = values[:minLen]
 
 			// Create Series
-			xSeries, err := collection.NewStringSeriesFromData(xLabels, nil)
+			labelSeries, err := collection.NewStringSeriesFromData(labels, nil)
 			if err != nil {
-				t.Logf("Failed to create xSeries: %v", err)
+				t.Logf("Failed to create labelSeries: %v", err)
 				return false
 			}
 
-			ySeries, err := collection.NewFloat64SeriesFromData(yValues, nil)
+			valueSeries, err := collection.NewFloat64SeriesFromData(values, nil)
 			if err != nil {
-				t.Logf("Failed to create ySeries: %v", err)
+				t.Logf("Failed to create valueSeries: %v", err)
 				return false
 			}
 
 			// Create temporary output file
 			tmpDir := t.TempDir()
-			outputPath := filepath.Join(tmpDir, "test_bar.html")
+			outputPath := filepath.Join(tmpDir, "test_pie.html")
 
 			opts := &plot.ChartOptions{
-				Title:      "Test Bar Chart",
+				Title:      "Test Pie Chart",
 				Width:      800,
 				Height:     600,
 				OutputPath: outputPath,
 			}
 
-			// Render bar chart
-			err = plot.RenderBar(xSeries, ySeries, opts)
+			// Render pie chart
+			err = plot.RenderPie(labelSeries, valueSeries, opts)
 			if err != nil {
-				t.Logf("RenderBar failed: %v", err)
+				t.Logf("RenderPie failed: %v", err)
 				return false
 			}
 
@@ -76,48 +76,48 @@ func TestProperty2_ValidChartGeneration_BarCharts(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Property 3: Type Compatibility Validation (bar charts)
+// Property 3: Type Compatibility Validation (pie charts)
 // For any chart plotting method that requires numeric data and any non-numeric Series,
 // the method should return an error indicating type incompatibility.
-func TestProperty3_TypeCompatibilityValidation_BarCharts(t *testing.T) {
+func TestProperty3_TypeCompatibilityValidation_PieCharts(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
-	properties.Property("non-numeric ySeries returns type error", prop.ForAll(
-		func(xLabels []string, yLabels []string) bool {
+	properties.Property("non-numeric valueSeries returns type error", prop.ForAll(
+		func(labels []string, values []string) bool {
 			// Skip empty data
-			if len(xLabels) == 0 || len(yLabels) == 0 {
+			if len(labels) == 0 || len(values) == 0 {
 				return true
 			}
 
 			// Ensure equal lengths
-			minLen := len(xLabels)
-			if len(yLabels) < minLen {
-				minLen = len(yLabels)
+			minLen := len(labels)
+			if len(values) < minLen {
+				minLen = len(values)
 			}
-			xLabels = xLabels[:minLen]
-			yLabels = yLabels[:minLen]
+			labels = labels[:minLen]
+			values = values[:minLen]
 
-			// Create Series (ySeries is string, not numeric)
-			xSeries, err := collection.NewStringSeriesFromData(xLabels, nil)
+			// Create Series (valueSeries is string, not numeric)
+			labelSeries, err := collection.NewStringSeriesFromData(labels, nil)
 			if err != nil {
 				return true // Skip this case
 			}
 
-			ySeries, err := collection.NewStringSeriesFromData(yLabels, nil)
+			valueSeries, err := collection.NewStringSeriesFromData(values, nil)
 			if err != nil {
 				return true // Skip this case
 			}
 
 			// Create temporary output file
 			tmpDir := t.TempDir()
-			outputPath := filepath.Join(tmpDir, "test_bar.html")
+			outputPath := filepath.Join(tmpDir, "test_pie.html")
 
 			opts := &plot.ChartOptions{
 				OutputPath: outputPath,
 			}
 
-			// Render bar chart - should fail with type error
-			err = plot.RenderBar(xSeries, ySeries, opts)
+			// Render pie chart - should fail with type error
+			err = plot.RenderPie(labelSeries, valueSeries, opts)
 			
 			// Should return an error
 			return err != nil
@@ -129,50 +129,50 @@ func TestProperty3_TypeCompatibilityValidation_BarCharts(t *testing.T) {
 	properties.TestingRun(t)
 }
 
-// Property 4: HTML File Creation (bar charts)
+// Property 4: HTML File Creation (pie charts)
 // For any successful chart generation, an HTML file should be created at the
 // specified output path and the file should be readable.
-func TestProperty4_HTMLFileCreation_BarCharts(t *testing.T) {
+func TestProperty4_HTMLFileCreation_PieCharts(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
 	properties.Property("HTML file is created and readable", prop.ForAll(
-		func(xLabels []string, yValues []int64, seed int64) bool {
+		func(labels []string, values []int64, seed int64) bool {
 			// Skip empty data
-			if len(xLabels) == 0 || len(yValues) == 0 {
+			if len(labels) == 0 || len(values) == 0 {
 				return true
 			}
 
 			// Ensure equal lengths
-			minLen := len(xLabels)
-			if len(yValues) < minLen {
-				minLen = len(yValues)
+			minLen := len(labels)
+			if len(values) < minLen {
+				minLen = len(values)
 			}
-			xLabels = xLabels[:minLen]
-			yValues = yValues[:minLen]
+			labels = labels[:minLen]
+			values = values[:minLen]
 
 			// Create Series
-			xSeries, err := collection.NewStringSeriesFromData(xLabels, nil)
+			labelSeries, err := collection.NewStringSeriesFromData(labels, nil)
 			if err != nil {
 				return true // Skip this case
 			}
 
-			ySeries, err := collection.NewInt64SeriesFromData(yValues, nil)
+			valueSeries, err := collection.NewInt64SeriesFromData(values, nil)
 			if err != nil {
 				return true // Skip this case
 			}
 
 			// Create temporary output file with unique name
 			tmpDir := t.TempDir()
-			outputPath := filepath.Join(tmpDir, fmt.Sprintf("test_bar_%d.html", seed))
+			outputPath := filepath.Join(tmpDir, fmt.Sprintf("test_pie_%d.html", seed))
 
 			opts := &plot.ChartOptions{
 				OutputPath: outputPath,
 			}
 
-			// Render bar chart
-			err = plot.RenderBar(xSeries, ySeries, opts)
+			// Render pie chart
+			err = plot.RenderPie(labelSeries, valueSeries, opts)
 			if err != nil {
-				t.Logf("RenderBar failed: %v", err)
+				t.Logf("RenderPie failed: %v", err)
 				return false
 			}
 

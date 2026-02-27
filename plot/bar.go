@@ -60,11 +60,15 @@ func RenderBar(xSeries, ySeries collection.Series, chartOpts *ChartOptions) erro
 	bar.SetGlobalOptions(
 		charts.WithTitleOpts(opts.Title{
 			Title: chartOpts.Title,
+			Top:   "5%",
 		}),
 		charts.WithInitializationOpts(opts.Initialization{
 			Width:  fmt.Sprintf("%dpx", chartOpts.Width),
 			Height: fmt.Sprintf("%dpx", chartOpts.Height),
 			Theme:  chartOpts.Theme,
+		}),
+		charts.WithLegendOpts(opts.Legend{
+			Top: "10%",
 		}),
 	)
 
