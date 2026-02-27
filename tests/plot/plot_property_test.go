@@ -66,7 +66,6 @@ func genSeriesWithNulls(minLen, maxLen int) gopter.Gen {
 // For any Series containing null values, when converted to chart data, the resulting
 // chart data array should contain only non-null values and should have length equal to
 // (Series.Len() - Series.NullCount()).
-// **Validates: Requirements 1.7, 2.7, 3.7**
 func TestProperty5_NullValueExclusion(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -170,7 +169,6 @@ func TestProperty5_NullValueExclusion(t *testing.T) {
 // Property 9: Numeric Series Extraction
 // For any numeric Series (int64 or float64), extracting values for chart data
 // should produce numeric values that can be plotted without type errors.
-// **Validates: Requirements 5.1**
 func TestProperty9_NumericSeriesExtraction(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -299,7 +297,6 @@ func TestProperty9_NumericSeriesExtraction(t *testing.T) {
 // Property 10: String Series Extraction
 // For any string Series used for labels or x-axis, extracting values should produce
 // string values that can be used as chart labels without type errors.
-// **Validates: Requirements 5.2**
 func TestProperty10_StringSeriesExtraction(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -371,7 +368,6 @@ func TestProperty10_StringSeriesExtraction(t *testing.T) {
 // For any numeric value in a Series, after conversion to chart data and back
 // (if extractable), the numeric value should be preserved within floating-point
 // precision limits.
-// **Validates: Requirements 5.6**
 func TestProperty11_DataPrecisionPreservation(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 

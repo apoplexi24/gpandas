@@ -20,7 +20,6 @@ import (
 // For any chart plotting method (PlotBar, PlotPie, PlotLine) and any column name
 // that does not exist in the DataFrame, the method should return an error indicating
 // the missing column.
-// **Validates: Requirements 1.3, 2.3, 3.3, 7.2**
 func TestProperty1_ColumnExistenceValidation(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -156,7 +155,6 @@ func TestProperty1_ColumnExistenceValidation(t *testing.T) {
 // Property 7: Default Options Application
 // For any plotting method called with nil ChartOptions, the chart should be generated
 // with default width (900), default height (500), and no title.
-// **Validates: Requirements 4.3, 4.4, 4.5**
 func TestProperty7_DefaultOptionsApplication(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -218,7 +216,6 @@ func TestProperty7_DefaultOptionsApplication(t *testing.T) {
 // Property 8: Invalid Path Error Handling
 // For any output path that cannot be written to (non-existent directory, permission denied, etc.),
 // the plotting method should return an error describing the file system issue.
-// **Validates: Requirements 4.6, 7.4**
 func TestProperty8_InvalidPathErrorHandling(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -276,7 +273,6 @@ func TestProperty8_InvalidPathErrorHandling(t *testing.T) {
 // For any DataFrame being plotted concurrently from multiple goroutines,
 // no data races should occur and all plot operations should complete successfully
 // or return appropriate errors.
-// **Validates: Requirements 6.7**
 func TestProperty12_ThreadSafePlotting(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -359,7 +355,6 @@ func TestProperty12_ThreadSafePlotting(t *testing.T) {
 // For any invalid input parameters (empty DataFrame, mismatched column types, missing columns),
 // validation should detect the issue and return an error before attempting to create
 // a go-echarts chart object.
-// **Validates: Requirements 7.5**
 func TestProperty13_InputValidationBeforeGeneration(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
@@ -410,7 +405,6 @@ func TestProperty13_InputValidationBeforeGeneration(t *testing.T) {
 // Property 14: Error Context Inclusion
 // For any error returned by plotting methods, the error message should include
 // context about which operation failed (e.g., "PlotBar", "column validation", "file write").
-// **Validates: Requirements 7.6, 8.6**
 func TestProperty14_ErrorContextInclusion(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
