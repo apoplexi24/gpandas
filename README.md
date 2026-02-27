@@ -10,9 +10,17 @@ GPandas is a high-performance data manipulation and analysis library written in 
 
 - **`benchmark/`**: Contains benchmark scripts for performance evaluation against Python's pandas:
 - **`dataframe/`**:  Houses the core DataFrame implementation:
+- **`plot/`**: Provides interactive chart generation capabilities using go-echarts v2:
+    - **`bar.go`**: Bar chart rendering functions
+    - **`pie.go`**: Pie chart rendering functions
+    - **`line.go`**: Line chart rendering functions (single and multi-series)
+    - **`options.go`**: Chart configuration options and defaults
+    - **`utils.go`**: Type conversion and validation utilities
 - **`gpandas.go`**: Serves as the primary entry point for the GPandas library. It provides high-level API functions for DataFrame creation and data loading.
 - **`gpandas_sql.go`**:  Extends GPandas to interact with SQL databases and Google BigQuery:
 - **`tests/`**: Contains unit tests to ensure the correctness and robustness of GPandas. It follows the exact same dir structure as the project for easy navigation.
+- **`examples/`**: Contains example programs demonstrating GPandas features:
+    - **`plot/`**: Chart generation examples for bar, pie, line charts, and customization
 - **`utils/collection/`**: Contains generic collection utilities:
     - **`set.go`**: Implements a generic `Set` data structure in Go, providing common set operations like `Add`, `Has`, `Union`, `Intersect`, `Difference`, and `Compare`. This `Set` is used internally within GPandas for efficient data handling.
     - **`series.go`**: Implements a concurrency-safe `Series` type that enforces homogeneous data types within columns. Each Series maintains a `dtype` and provides methods like `At()`, `Set()`, `Append()`, and `Len()` for efficient columnar data access.
@@ -54,6 +62,57 @@ GPandas provides pandas-like indexing capabilities for intuitive data access:
     - **`Read_sql()`**: Query and load data from SQL databases (SQL Server, PostgreSQL, and others supported by Go database/sql package) into DataFrames.
 - **Google BigQuery Support**:
     - **`From_gbq()`**: Query and load data from Google BigQuery tables into DataFrames, enabling analysis of large datasets stored in BigQuery.
+
+### Data Visualization
+
+GPandas integrates with [go-echarts v2](https://github.com/go-echarts/go-echarts) to provide interactive HTML chart generation directly from DataFrames:
+
+- **Bar Charts**: Create bar charts with `DataFrame.PlotBar()` for categorical data visualization
+- **Pie Charts**: Generate pie charts with `DataFrame.PlotPie()` for proportional data representation
+- **Line Charts**: Plot line charts with `DataFrame.PlotLine()` for time series and trend analysis
+  - Supports single and multi-series line charts for comparing multiple data series
+
+**Key Features**:
+- Interactive HTML output viewable in any web browser
+- Customizable chart options (title, width, height, theme)
+- Automatic null value handling
+- Thread-safe concurrent plotting
+- Type-safe data conversion
+
+**Example**:
+```go
+import (
+    "github.com/apoplexi24/gpandas/dataframe"
+    "github.com/apoplexi24/gpandas/plot"
+    "github.com/apoplexi24/gpandas/utils/collection"
+)
+
+// Create DataFrame
+categories, _ := collection.NewStringSeriesFromData([]string{"A", "B", "C"}, nil)
+values, _ := collection.NewFloat64SeriesFromData([]float64{10.0, 20.0, 30.0}, nil)
+
+df := &dataframe.DataFrame{
+    Columns: map[string]collection.Series{
+        "category": categories,
+        "value":    values,
+    },
+    ColumnOrder: []string{"category", "value"},
+    Index:       []string{"0", "1", "2"},
+}
+
+// Generate bar chart
+opts := &plot.ChartOptions{
+    Title:      "Sample Bar Chart",
+    Width:      900,
+    Height:     500,
+    OutputPath: "output/chart.html",
+}
+df.PlotBar("category", "value", opts)
+```
+
+See `examples/plot/` for complete working examples of all chart types.
+
+**Dependencies**: Requires `github.com/go-echarts/go-echarts/v2` - automatically installed via `go get`.
 
 ### Data Types
 
@@ -130,6 +189,45 @@ GPandas is engineered for performance through:
    ```bash
    go mod download
    ```
+
+## Troubleshooting
+
+### Plotting Issues
+
+**Problem**: `output path is required in ChartOptions`
+- **Solution**: Always provide an `OutputPath` in `ChartOptions`. This field is required for all plotting methods.
+  ```go
+  opts := &plot.ChartOptions{
+      OutputPath: "output/chart.html",  // Required
+  }
+  ```
+
+**Problem**: `column 'X' not found in DataFrame`
+- **Solution**: Verify that the column name exists in your DataFrame using `df.ColumnOrder` or by printing the DataFrame with `df.String()`.
+
+**Problem**: `column 'X' has type string, expected numeric type`
+- **Solution**: Ensure y-axis columns for bar/line charts and value columns for pie charts contain numeric data (int64 or float64). Use string columns only for labels and x-axis categories.
+
+**Problem**: Charts display incorrectly or show no data
+- **Solution**: Check for null values in your data. While GPandas handles nulls by skipping them, too many nulls may result in sparse charts. Use Series methods to inspect null counts.
+
+**Problem**: File write errors when generating charts
+- **Solution**: Ensure the output directory exists and you have write permissions. Create the directory first if needed:
+  ```go
+  os.MkdirAll("output", 0755)
+  ```
+
+### General Issues
+
+**Problem**: Type mismatch errors when creating Series
+- **Solution**: Use the appropriate Series constructor for your data type:
+  - `NewStringSeriesFromData()` for strings
+  - `NewFloat64SeriesFromData()` for float64
+  - `NewInt64SeriesFromData()` for int64
+  - `NewBoolSeriesFromData()` for booleans
+
+**Problem**: DataFrame operations fail with nil pointer errors
+- **Solution**: Always check if DataFrame is nil before performing operations, especially after operations that may return nil on error.
 
 ## License
 

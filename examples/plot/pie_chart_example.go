@@ -15,18 +15,26 @@ func main() {
 	
 	// Define the company labels
 	companies := []string{"Company A", "Company B", "Company C", "Company D", "Company E"}
-	companySeries := collection.NewSeriesFromSlice(companies, "Company")
+	companySeries, err := collection.NewStringSeriesFromData(companies, nil)
+	if err != nil {
+		log.Fatalf("Failed to create company series: %v", err)
+	}
 	
 	// Define the market share percentages (values)
 	marketShare := []float64{35.5, 28.3, 18.7, 12.1, 5.4}
-	shareSeries := collection.NewSeriesFromSlice(marketShare, "MarketShare")
+	shareSeries, err := collection.NewFloat64SeriesFromData(marketShare, nil)
+	if err != nil {
+		log.Fatalf("Failed to create market share series: %v", err)
+	}
 	
 	// Create DataFrame from the series
-	df, err := dataframe.NewDataFrame(
-		[]collection.Series{companySeries, shareSeries},
-	)
-	if err != nil {
-		log.Fatalf("Failed to create DataFrame: %v", err)
+	df := &dataframe.DataFrame{
+		Columns: map[string]collection.Series{
+			"Company":     companySeries,
+			"MarketShare": shareSeries,
+		},
+		ColumnOrder: []string{"Company", "MarketShare"},
+		Index:       []string{"0", "1", "2", "3", "4"},
 	}
 	
 	fmt.Println("Sample DataFrame:")

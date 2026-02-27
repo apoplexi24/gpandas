@@ -12,16 +12,24 @@ import (
 func main() {
 	// Create sample DataFrame for demonstration
 	categories := []string{"Q1", "Q2", "Q3", "Q4"}
-	categorySeries := collection.NewSeriesFromSlice(categories, "Quarter")
+	categorySeries, err := collection.NewStringSeriesFromData(categories, nil)
+	if err != nil {
+		log.Fatalf("Failed to create category series: %v", err)
+	}
 	
 	revenue := []float64{125.5, 148.3, 167.2, 189.7}
-	revenueSeries := collection.NewSeriesFromSlice(revenue, "Revenue")
-	
-	df, err := dataframe.NewDataFrame(
-		[]collection.Series{categorySeries, revenueSeries},
-	)
+	revenueSeries, err := collection.NewFloat64SeriesFromData(revenue, nil)
 	if err != nil {
-		log.Fatalf("Failed to create DataFrame: %v", err)
+		log.Fatalf("Failed to create revenue series: %v", err)
+	}
+	
+	df := &dataframe.DataFrame{
+		Columns: map[string]collection.Series{
+			"Quarter": categorySeries,
+			"Revenue": revenueSeries,
+		},
+		ColumnOrder: []string{"Quarter", "Revenue"},
+		Index:       []string{"0", "1", "2", "3"},
 	}
 	
 	fmt.Println("Sample DataFrame:")

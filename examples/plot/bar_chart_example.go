@@ -15,18 +15,26 @@ func main() {
 	
 	// Define the product categories (x-axis)
 	products := []string{"Laptop", "Phone", "Tablet", "Monitor", "Keyboard"}
-	productSeries := collection.NewSeriesFromSlice(products, "Product")
+	productSeries, err := collection.NewStringSeriesFromData(products, nil)
+	if err != nil {
+		log.Fatalf("Failed to create product series: %v", err)
+	}
 	
 	// Define the sales values (y-axis)
 	sales := []int64{45, 78, 32, 56, 23}
-	salesSeries := collection.NewSeriesFromSlice(sales, "Sales")
+	salesSeries, err := collection.NewInt64SeriesFromData(sales, nil)
+	if err != nil {
+		log.Fatalf("Failed to create sales series: %v", err)
+	}
 	
 	// Create DataFrame from the series
-	df, err := dataframe.NewDataFrame(
-		[]collection.Series{productSeries, salesSeries},
-	)
-	if err != nil {
-		log.Fatalf("Failed to create DataFrame: %v", err)
+	df := &dataframe.DataFrame{
+		Columns: map[string]collection.Series{
+			"Product": productSeries,
+			"Sales":   salesSeries,
+		},
+		ColumnOrder: []string{"Product", "Sales"},
+		Index:       []string{"0", "1", "2", "3", "4"},
 	}
 	
 	fmt.Println("Sample DataFrame:")

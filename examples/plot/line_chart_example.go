@@ -15,22 +15,34 @@ func main() {
 	
 	// Define the time points (x-axis)
 	months := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
-	monthSeries := collection.NewSeriesFromSlice(months, "Month")
+	monthSeries, err := collection.NewStringSeriesFromData(months, nil)
+	if err != nil {
+		log.Fatalf("Failed to create month series: %v", err)
+	}
 	
 	// Define temperature values (first y-axis series)
 	temperatures := []float64{5.2, 7.1, 12.3, 16.8, 21.5, 25.3, 28.1, 27.4, 23.2, 17.5, 11.2, 6.8}
-	tempSeries := collection.NewSeriesFromSlice(temperatures, "Temperature")
+	tempSeries, err := collection.NewFloat64SeriesFromData(temperatures, nil)
+	if err != nil {
+		log.Fatalf("Failed to create temperature series: %v", err)
+	}
 	
 	// Define humidity values (second y-axis series)
 	humidity := []float64{78.5, 72.3, 68.1, 65.4, 62.8, 58.2, 55.6, 57.3, 63.5, 70.2, 75.8, 80.1}
-	humiditySeries := collection.NewSeriesFromSlice(humidity, "Humidity")
+	humiditySeries, err := collection.NewFloat64SeriesFromData(humidity, nil)
+	if err != nil {
+		log.Fatalf("Failed to create humidity series: %v", err)
+	}
 	
 	// Create DataFrame from the series
-	df, err := dataframe.NewDataFrame(
-		[]collection.Series{monthSeries, tempSeries, humiditySeries},
-	)
-	if err != nil {
-		log.Fatalf("Failed to create DataFrame: %v", err)
+	df := &dataframe.DataFrame{
+		Columns: map[string]collection.Series{
+			"Month":       monthSeries,
+			"Temperature": tempSeries,
+			"Humidity":    humiditySeries,
+		},
+		ColumnOrder: []string{"Month", "Temperature", "Humidity"},
+		Index:       []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"},
 	}
 	
 	fmt.Println("Sample DataFrame:")
