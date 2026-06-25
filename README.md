@@ -55,6 +55,45 @@ GPandas provides pandas-like indexing capabilities for intuitive data access:
 - **Position-based Indexing (`iLoc`)**
 - **Index Management**
 
+### Filtering and Selection by Condition
+
+GPandas supports pandas-like boolean filtering for row subsetting. `Filter` and `Where` return a chainable, error-deferred `FilterChain`; terminate the chain with `.Result()` (or `.MustResult()`):
+
+- **`Filter()`**: Keep rows where a column satisfies a comparison, e.g. `df.Filter("Age", dataframe.GreaterThan, int64(25)).Result()`. Supported operators: `Equals`, `NotEquals`, `GreaterThan`, `GreaterThanOrEqual`, `LessThan`, `LessThanOrEqual`. Numeric comparisons work across `int`/`int64`/`float64`, and null values never match a comparison.
+- **Chaining**: Conditions can be combined fluently; the first error is carried through and surfaced by `.Result()`:
+  ```go
+  result, err := df.
+      Filter("Department", dataframe.Equals, "Engineering").
+      Filter("Salary", dataframe.GreaterThan, 90000.0).
+      Result()
+  ```
+- **`Where()`**: Keep rows for which a predicate returns true. The predicate receives a `map[string]any` of the row (nulls as `nil`), enabling arbitrary multi-column conditions:
+  ```go
+  result, err := df.Where(func(row map[string]any) bool {
+      age, _ := row["Age"].(int64)
+      return age > 25 && row["City"] == "NYC"
+  }).Result()
+  ```
+
+### Summary Statistics
+
+GPandas provides exploratory data analysis helpers over numeric columns:
+
+- **`Describe()`**: Returns a DataFrame of `count`, `mean`, `std` (sample, ddof=1), `min`, `25%`, `50%`, `75%`, `max` per numeric column. Quantiles use linear interpolation and nulls are ignored.
+- **Column aggregations**: `Mean()`, `Sum()`, `Std()`, `Median()`, `Min()`, `Max()` each return a `map[string]float64` keyed by numeric column name.
+- **`NullCount()`**: Returns a `map[string]int` of null counts per column.
+- **`ValueCounts(column)`**: Returns a DataFrame of unique values and their frequencies (descending), excluding nulls.
+
+### Transforming Columns
+
+GPandas supports element-wise and row-wise transformations:
+
+- **`Apply(column, fn)`**: Transform each value of a column with `fn func(any) any` (nulls passed as `nil`). The result column type is inferred from the returned values; mixed integer and floating-point results are promoted to `float64` (pandas-like).
+- **`Map(column, mapping)`**: Replace values in a column according to a `map[any]any`; unmapped values are kept unchanged.
+- **`ApplyRow(fn)`**: Transform whole rows with `fn func(map[string]any) map[string]any`, useful for deriving new columns. New keys are appended (sorted) after the existing columns.
+
+See `examples/transform/` for a complete working example.
+
 ### Data Loading from External Sources
 
 - **CSV Reading**: Efficiently read CSV files into DataFrames with `gpandas.Read_csv()`, leveraging concurrent processing for performance.
