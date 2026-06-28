@@ -94,6 +94,39 @@ GPandas supports element-wise and row-wise transformations:
 
 See `examples/transform/` for a complete working example.
 
+### Handling Missing Data
+
+GPandas provides null-aware cleaning operations:
+
+- **`FillNA(value)`**: Replace nulls across all compatible columns with a constant. Incompatible columns are left unchanged.
+- **`FillNAColumn(column, value)`**: Fill nulls in a single column.
+- **`FillNAMethod(method)`**: Forward fill (`"ffill"`) or backward fill (`"bfill"`) nulls by propagation.
+- **`DropNA(how, subset)`**: Drop rows containing nulls. `how` is `"any"` (default) or `"all"`; `subset` limits the columns considered.
+- **`IsNA()` / `NotNA()`**: Return boolean DataFrames indicating null / non-null cells.
+
+### Adding Columns
+
+GPandas supports adding and inserting columns in place:
+
+- **`Assign(name, series)`**: Add a new column (or replace an existing one) from a Series.
+- **`AssignFunc(name, fn)`**: Add a column computed from each row with `fn func(map[string]any) any`; the type is inferred.
+- **`Insert(loc, name, series)`**: Insert a column at a specific position.
+
+### Unique Values and Deduplication
+
+- **`Unique(column)`**: Distinct values in first-appearance order (includes a single `nil` if the column has nulls).
+- **`NUnique(column)`**: Count of distinct non-null values.
+- **`Duplicated(subset, keep)`**: Boolean slice marking duplicate rows. `keep` is `"first"` (default), `"last"`, or `"none"`.
+- **`DropDuplicates(subset, keep)`**: Return a new DataFrame with duplicate rows removed.
+
+### Type Casting and Introspection
+
+- **`AsType(column, targetType)`**: Convert a column to `FloatCol{}`, `IntCol{}`, `StringCol{}`, or `BoolCol{}` (string aliases like `"float64"` also accepted). Nulls are preserved.
+- **`DTypes()`**: Map of column name to data type name.
+- **`Info()`**: Human-readable summary of rows, columns, non-null counts, and dtypes.
+
+See `examples/cleaning/` for a complete working example of missing-data handling, deduplication, column mutation, and type casting.
+
 ### Data Loading from External Sources
 
 - **CSV Reading**: Efficiently read CSV files into DataFrames with `gpandas.Read_csv()`, leveraging concurrent processing for performance.
