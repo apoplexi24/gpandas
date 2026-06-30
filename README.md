@@ -127,9 +127,38 @@ GPandas supports adding and inserting columns in place:
 
 See `examples/cleaning/` for a complete working example of missing-data handling, deduplication, column mutation, and type casting.
 
+### Aggregation and Window Functions
+
+GPandas supports flexible aggregation and time-series style window operations:
+
+- **`GroupBy(...).Agg(spec)`**: Apply multiple aggregation functions per column at once, e.g. `gb.Agg(map[string][]dataframe.AggFunc{"Salary": {dataframe.AggSum, dataframe.AggMean}})`. Supported functions: `AggSum`, `AggMean`, `AggCount`, `AggMin`, `AggMax`, `AggStd`, `AggMedian`, `AggFirst`, `AggLast`. Result columns are named `<column>_<func>`.
+- **`Rolling(window)`**: Moving-window aggregations — `.Mean()`, `.Sum()`, `.Min()`, `.Max()`, `.Std()`. Positions without a full window of non-null values are null.
+- **`Shift(periods)`**: Shift values down (positive) or up (negative), filling vacated cells with null.
+- **`CumSum()` / `CumMax()` / `CumMin()` / `CumProd()`**: Cumulative operations over numeric columns; nulls are skipped and preserved.
+
+### Reshaping with Stack, Unstack, and MultiIndex
+
+- **`Stack()`**: Reshape wide → long, producing `index`/`variable`/`value` columns (null cells dropped).
+- **`Unstack()`**: Inverse of `Stack`, reshaping the long format back to wide.
+- **`SetMultiIndex(columns)`**: Build a composite (flattened) index by joining the given columns' values.
+
+### String Methods
+
+String columns expose a vectorized accessor via `df.Str(column)` (or `series.Str()` on a `*StringSeries`):
+
+- `Lower()`, `Upper()`, `Strip()`, `Title()`, `Replace(old, new)` → `*StringSeries`
+- `Contains(substr)`, `StartsWith(prefix)`, `EndsWith(suffix)` → `*BoolSeries`
+- `Len()` → `*Int64Series`; `Split(sep)` → `[][]string`
+
+Null values are preserved across all string operations. Results can be added back with `Assign`.
+
+See `examples/advanced/` for a complete working example of aggregation, window functions, reshaping, and string methods.
+
 ### Data Loading from External Sources
 
 - **CSV Reading**: Efficiently read CSV files into DataFrames with `gpandas.Read_csv()`, leveraging concurrent processing for performance.
+- **JSON I/O**: Read records-oriented JSON with `gpandas.Read_json()` and export with `DataFrame.ToJSON()`.
+- **Excel I/O**: Read `.xlsx` files with `gpandas.Read_excel()` and export with `DataFrame.ToExcel()` (powered by [excelize](https://github.com/xuri/excelize)).
 - **SQL Database Integration**:
     - **`Read_sql()`**: Query and load data from SQL databases (SQL Server, PostgreSQL, and others supported by Go database/sql package) into DataFrames.
 - **Google BigQuery Support**:
