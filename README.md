@@ -154,11 +154,35 @@ Null values are preserved across all string operations. Results can be added bac
 
 See `examples/advanced/` for a complete working example of aggregation, window functions, reshaping, and string methods.
 
+### Statistics, Sampling, and Chaining
+
+- **`Corr()` / `Cov()`**: Pairwise Pearson correlation and sample covariance matrices over numeric columns (returned as a square DataFrame indexed by column name).
+- **`Sample(n, seed...)`**: Randomly select `n` rows without replacement; an optional seed makes the selection deterministic.
+- **`Pipe(fn)`**: Apply a custom `func(*DataFrame) (*DataFrame, error)` for fluent method chaining.
+
+### DateTime and Categorical Types
+
+- **`ToDatetime(column, layout)`**: Parse a string column into a datetime column (auto-detects common layouts when `layout` is empty). Then `df.Dt(column)` exposes `Year()`, `Month()`, `Day()`, `Hour()`, `Weekday()`, `Date()`, and more.
+- **`AsCategorical(column)`**: Convert a column to a memory-efficient categorical type backed by integer codes; `Categories(column)` lists the distinct categories.
+
+### Multi-key Merge
+
+- **`MergeOn(other, on, how)`**: Join two DataFrames on multiple key columns (inner, left, right, full), generalizing `Merge`.
+
+### Additional Visualizations
+
+- **`PlotScatter(xCol, yCol, opts)`**: Scatter chart from two numeric columns.
+- **`PlotHistogram(column, bins, opts)`**: Histogram of a numeric column.
+- **`PlotHeatmap(opts)`**: Heatmap of numeric columns (pairs well with `Corr()`).
+
+See `examples/analytics/` for a complete working example of correlation, sampling, datetime, categorical, multi-key merge, Parquet, and the new charts.
+
 ### Data Loading from External Sources
 
 - **CSV Reading**: Efficiently read CSV files into DataFrames with `gpandas.Read_csv()`, leveraging concurrent processing for performance.
 - **JSON I/O**: Read records-oriented JSON with `gpandas.Read_json()` and export with `DataFrame.ToJSON()`.
 - **Excel I/O**: Read `.xlsx` files with `gpandas.Read_excel()` and export with `DataFrame.ToExcel()` (powered by [excelize](https://github.com/xuri/excelize)).
+- **Parquet I/O**: Read `.parquet` files with `gpandas.Read_parquet()` and export with `DataFrame.ToParquet()` (powered by [parquet-go](https://github.com/parquet-go/parquet-go)). Note: columns are written as non-nullable, so nulls are stored as zero values.
 - **SQL Database Integration**:
     - **`Read_sql()`**: Query and load data from SQL databases (SQL Server, PostgreSQL, and others supported by Go database/sql package) into DataFrames.
 - **Google BigQuery Support**:
