@@ -94,6 +94,30 @@ GPandas supports element-wise and row-wise transformations:
 
 See `examples/transform/` for a complete working example.
 
+### Arithmetic and Comparison Operations
+
+GPandas supports element-wise arithmetic and comparison across columns. Each operation returns a standalone `Series` (it does not mutate the DataFrame); attach the result with `Assign`. Nulls propagate, so a null in either operand yields a null in that position.
+
+- **Column-column arithmetic**: `Add()`, `Sub()`, `Mul()`, `Div()`, `Pow()` operate on two numeric columns. If both columns are integer-typed the result stays `int64`; otherwise it is promoted to `float64` (pandas-like).
+- **Scalar arithmetic**: `AddScalar()`, `SubScalar()`, `MulScalar()`, `DivScalar()`, `PowScalar()` apply a `float64` scalar to every value of a column.
+- **Column-column comparison**: `Gt()`, `Lt()`, `Ge()`, `Le()`, `Eq()`, `Ne()` compare two columns and return a boolean Series.
+- **Scalar comparison**: `GtScalar()`, `LtScalar()`, `GeScalar()`, `LeScalar()`, `EqScalar()`, `NeScalar()` compare a column against a scalar value.
+
+```go
+// Total units = Q1 + Q2 (int + int stays int64)
+total, err := df.Add("Q1", "Q2")
+if err != nil {
+    log.Fatal(err)
+}
+_ = df.Assign("TotalUnits", total)
+
+// Boolean mask of rows where Q2 exceeds Q1
+mask, _ := df.Gt("Q2", "Q1")
+_ = df.Assign("Grew", mask)
+```
+
+See `examples/arithmetic/` for a complete working example.
+
 ### Handling Missing Data
 
 GPandas provides null-aware cleaning operations:
