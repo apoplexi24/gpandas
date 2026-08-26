@@ -75,6 +75,19 @@ GPandas supports pandas-like boolean filtering for row subsetting. `Filter` and 
       return age > 25 && row["City"] == "NYC"
   }).Result()
   ```
+- **`Isin()`**: Keep rows whose value is a member of a set, e.g. `df.Isin("City", []any{"NYC", "LA"}).Result()`. Membership uses a hash set built once per call, so the filter is O(rows + len(values)). Numeric members match across `int`/`int64`/`float64`, nulls never match, and an empty set selects no rows.
+- **`Between()`**: Keep rows inside a range, e.g. `df.Between("Age", 25, 35, dataframe.InclusiveBoth).Result()`. The `Inclusive` option selects which bounds count: `InclusiveBoth` (default, also the zero value `""`), `InclusiveNeither`, `InclusiveLeft`, `InclusiveRight`. Nulls never fall inside a range.
+- **`Nlargest()` / `Nsmallest()`**: Keep the `n` highest or lowest rows of a column, ordered best first, e.g. `df.Nlargest(3, "Salary").Result()`. Selection uses a bounded heap instead of a full sort (O(rows × log n) time, O(n) extra space). Ties keep the earliest row, nulls are never ranked, and fewer than `n` rows are returned when the column has fewer non-null values.
+- **Composition**: All four helpers are `FilterChain` steps, so they interleave freely with `Filter` and `Where` and share the same deferred-error behaviour:
+  ```go
+  result, err := df.
+      Isin("Department", []any{"Engineering", "Sales"}).
+      Between("Age", 25, 30, dataframe.InclusiveBoth).
+      Nlargest(2, "Salary").
+      Result()
+  ```
+
+See `examples/select/` for a complete working example.
 
 ### Summary Statistics
 
