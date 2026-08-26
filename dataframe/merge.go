@@ -23,6 +23,97 @@ type mergeRow struct {
 	nulls  []bool
 }
 
+// Suffixes appended to non-key columns that appear in both frames being joined,
+// matching pandas' default suffixes=("_x", "_y").
+const (
+	mergeSuffixLeft  = "_x"
+	mergeSuffixRight = "_y"
+)
+
+// mergeOutCol describes one column of a join result: the label it carries in the
+// output, and the source column it inherits its dtype from.
+type mergeOutCol struct {
+	name   string
+	source collection.Series
+}
+
+// buildMergeColumns computes the output column layout of a join: every left
+// column, followed by the right columns that are not join keys. That is the same
+// order the row builders emit values in.
+//
+// A non-key column present in both frames would otherwise map to a single output
+// name, silently dropping one side's data while leaving a duplicate entry in
+// ColumnOrder. Such columns are suffixed "_x" (left) and "_y" (right) as pandas
+// does. If a suffixed name would still collide with an existing column, an error
+// is returned rather than losing data.
+func buildMergeColumns(left, right *DataFrame, keys map[string]bool) ([]mergeOutCol, error) {
+	leftHas := make(map[string]bool, len(left.ColumnOrder))
+	for _, c := range left.ColumnOrder {
+		leftHas[c] = true
+	}
+	rightHas := make(map[string]bool, len(right.ColumnOrder))
+	for _, c := range right.ColumnOrder {
+		rightHas[c] = true
+	}
+
+	out := make([]mergeOutCol, 0, len(left.ColumnOrder)+len(right.ColumnOrder))
+	taken := make(map[string]bool, len(left.ColumnOrder)+len(right.ColumnOrder))
+
+	add := func(label, original string, source collection.Series) error {
+		if taken[label] {
+			return fmt.Errorf("merge: column '%s' (from '%s') collides with another column in the result; rename it before merging", label, original)
+		}
+		taken[label] = true
+		out = append(out, mergeOutCol{name: label, source: source})
+		return nil
+	}
+
+	for _, c := range left.ColumnOrder {
+		label := c
+		if !keys[c] && rightHas[c] {
+			label = c + mergeSuffixLeft
+		}
+		if err := add(label, c, left.Columns[c]); err != nil {
+			return nil, err
+		}
+	}
+	for _, c := range right.ColumnOrder {
+		if keys[c] {
+			continue // join keys are contributed by the left layout
+		}
+		label := c
+		if leftHas[c] {
+			label = c + mergeSuffixRight
+		}
+		if err := add(label, c, right.Columns[c]); err != nil {
+			return nil, err
+		}
+	}
+
+	return out, nil
+}
+
+// seriesFromMergeValues builds the output Series for one join column, taking its
+// dtype from the source column the values came from.
+func seriesFromMergeValues(values []any, nulls []bool, source collection.Series) (collection.Series, error) {
+	// The null mask is authoritative: normalise so the constructors, which infer
+	// nulls from nil, agree with it.
+	for i, isNull := range nulls {
+		if isNull {
+			values[i] = nil
+		}
+	}
+
+	if source == nil {
+		return collection.NewAnySeriesFromData(values, nulls)
+	}
+	dtype := source.DType()
+	if dtype == nil {
+		return collection.NewAnySeriesFromData(values, nulls)
+	}
+	return collection.NewSeriesWithData(dtype, values)
+}
+
 // Merge combines two DataFrames based on a specified column and merge type.
 //
 // Parameters:
@@ -42,6 +133,10 @@ type mergeRow struct {
 //   - An error if the merge operation fails, such as if the specified column does not exist in one or both DataFrames.
 //
 // Note: Null values in the merge key column are handled specially - they never match with other null values.
+//
+// Note: Columns other than the join key that exist in both DataFrames are
+// suffixed "_x" (left) and "_y" (right), as pandas does, so neither side's data
+// is lost.
 //
 // Examples:
 //
@@ -131,13 +226,14 @@ func (df *DataFrame) Merge(other *DataFrame, on string, how MergeHow) (*DataFram
 		df2Map[v] = append(df2Map[v], i)
 	}
 
-	// Prepare result columns
-	resultColumns := make([]string, 0, len(df.ColumnOrder)+len(other.ColumnOrder))
-	resultColumns = append(resultColumns, df.ColumnOrder...)
-	for _, col := range other.ColumnOrder {
-		if col != on {
-			resultColumns = append(resultColumns, col)
-		}
+	// Prepare result columns, suffixing non-key columns that occur in both frames
+	outCols, err := buildMergeColumns(df, other, map[string]bool{on: true})
+	if err != nil {
+		return nil, err
+	}
+	resultColumns := make([]string, len(outCols))
+	for i, oc := range outCols {
+		resultColumns[i] = oc.name
 	}
 
 	// Prepare result rows based on merge type
@@ -156,9 +252,9 @@ func (df *DataFrame) Merge(other *DataFrame, on string, how MergeHow) (*DataFram
 	}
 
 	// Convert row-wise to columnar Series with proper null handling
-	cols := make(map[string]collection.Series, len(resultColumns))
+	cols := make(map[string]collection.Series, len(outCols))
 
-	for colIdx, colName := range resultColumns {
+	for colIdx, oc := range outCols {
 		// Collect values and nulls for this column
 		values := make([]any, len(resultRows))
 		nulls := make([]bool, len(resultRows))
@@ -173,11 +269,11 @@ func (df *DataFrame) Merge(other *DataFrame, on string, how MergeHow) (*DataFram
 		}
 
 		// Create appropriate typed series
-		s, err := createTypedSeriesFromMerge(values, nulls, df, other, colName, on)
+		s, err := seriesFromMergeValues(values, nulls, oc.source)
 		if err != nil {
 			return nil, err
 		}
-		cols[colName] = s
+		cols[oc.name] = s
 	}
 
 	// Create default index for result
@@ -187,29 +283,6 @@ func (df *DataFrame) Merge(other *DataFrame, on string, how MergeHow) (*DataFram
 	}
 
 	return &DataFrame{Columns: cols, ColumnOrder: resultColumns, Index: index}, nil
-}
-
-// createTypedSeriesFromMerge creates a typed series for merge results
-func createTypedSeriesFromMerge(values []any, nulls []bool, df1, df2 *DataFrame, colName, on string) (collection.Series, error) {
-	// Determine source series for type inference
-	var sourceSeries collection.Series
-	if s, ok := df1.Columns[colName]; ok {
-		sourceSeries = s
-	} else if s, ok := df2.Columns[colName]; ok {
-		sourceSeries = s
-	}
-
-	if sourceSeries == nil {
-		return collection.NewAnySeriesFromData(values, nulls)
-	}
-
-	dtype := sourceSeries.DType()
-	if dtype == nil {
-		return collection.NewAnySeriesFromData(values, nulls)
-	}
-
-	// Create typed series based on source dtype
-	return collection.NewSeriesWithData(dtype, values)
 }
 
 // performInnerMerge combines two DataFrames, returning only matching rows
@@ -533,4 +606,3 @@ func performFullMerge(df1, df2 *DataFrame, on string, df2Map map[any][]int, left
 
 	return result
 }
-

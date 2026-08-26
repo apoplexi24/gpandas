@@ -3,6 +3,7 @@ package dataframe
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 
 	"github.com/apoplexi24/gpandas/utils/collection"
@@ -60,8 +61,13 @@ func DefaultConcatOptions() ConcatOptions {
 }
 
 // Concat concatenates DataFrames along a particular axis.
-// This is an internal version used by other dataframe methods.
-// For the public API, use gpandas.Concat.
+//
+// Column types are preserved: when every input agrees on a column's dtype the
+// result keeps it, a mix of integer and floating-point columns widens to float64
+// (as pandas does), and only a genuine type conflict falls back to an untyped
+// (any) column.
+//
+// gpandas.Concat is the public entry point and delegates here.
 func Concat(objs []*DataFrame, opts ...ConcatOptions) (*DataFrame, error) {
 	// Apply default options
 	options := DefaultConcatOptions()
@@ -192,10 +198,30 @@ func concatAlongRows(dfs []*DataFrame, opts ConcatOptions) (*DataFrame, error) {
 		df.RUnlock()
 	}
 
-	// Create result series for each column using AnySeries for simplicity
-	resultSeries := make(map[string]collection.Series)
+	// Create a result series per column, preserving the input dtype when every
+	// DataFrame that has the column agrees on it. Only a genuine type conflict
+	// falls back to an untyped (any) Series.
+	colTypes := make(map[string][]reflect.Type, len(resultColumns))
+	for _, df := range dfs {
+		df.RLock()
+		for _, col := range resultColumns {
+			if s := df.Columns[col]; s != nil {
+				colTypes[col] = append(colTypes[col], s.DType())
+			}
+		}
+		df.RUnlock()
+	}
+
+	resultSeries := make(map[string]collection.Series, len(resultColumns))
+	resultDTypes := make(map[string]reflect.Type, len(resultColumns))
 	for _, col := range resultColumns {
-		resultSeries[col] = collection.NewAnySeries(totalRows)
+		dtype := concatDType(colTypes[col])
+		resultDTypes[col] = dtype
+		if dtype == nil {
+			resultSeries[col] = collection.NewAnySeries(totalRows)
+		} else {
+			resultSeries[col] = collection.NewSeriesOfType(dtype, totalRows)
+		}
 	}
 
 	// Append data from each DataFrame
@@ -214,7 +240,10 @@ func concatAlongRows(dfs []*DataFrame, opts ConcatOptions) (*DataFrame, error) {
 						resultSeries[col].AppendNull()
 					} else {
 						val, _ := series.At(r)
-						resultSeries[col].Append(val)
+						if err := appendConcatValue(resultSeries[col], resultDTypes[col], val); err != nil {
+							df.RUnlock()
+							return nil, fmt.Errorf("concat: column '%s' row %d: %w", col, r, err)
+						}
 					}
 				} else {
 					// Column doesn't exist in this DataFrame, append null
@@ -325,9 +354,16 @@ func concatAlongColumns(dfs []*DataFrame, opts ConcatOptions) (*DataFrame, error
 			columnsSeen[col] = true
 			resultColumns = append(resultColumns, col)
 
-			// Create new series for this column
+			// Create new series for this column. Each column comes from exactly
+			// one DataFrame here, so its dtype carries over directly.
 			series := df.Columns[col]
-			newSeries := collection.NewAnySeries(len(resultIndex))
+			dtype := concatDType([]reflect.Type{series.DType()})
+			var newSeries collection.Series
+			if dtype == nil {
+				newSeries = collection.NewAnySeries(len(resultIndex))
+			} else {
+				newSeries = collection.NewSeriesOfType(dtype, len(resultIndex))
+			}
 
 			for _, idx := range resultIndex {
 				if rowPos, ok := indexSets[dfIdx][idx]; ok && rowPos < series.Len() {
@@ -335,7 +371,10 @@ func concatAlongColumns(dfs []*DataFrame, opts ConcatOptions) (*DataFrame, error
 						newSeries.AppendNull()
 					} else {
 						val, _ := series.At(rowPos)
-						newSeries.Append(val)
+						if err := appendConcatValue(newSeries, dtype, val); err != nil {
+							df.RUnlock()
+							return nil, fmt.Errorf("concat: column '%s': %w", col, err)
+						}
 					}
 				} else {
 					// Row doesn't exist in this DataFrame
@@ -363,6 +402,83 @@ func concatAlongColumns(dfs []*DataFrame, opts ConcatOptions) (*DataFrame, error
 		ColumnOrder: resultColumns,
 		Index:       finalIndex,
 	}, nil
+}
+
+// concatDType resolves the dtype of a concatenated column from the dtypes of the
+// inputs that contribute to it.
+//
+// When every input agrees, that dtype is kept, so stacking two Int64 columns
+// yields an Int64 column rather than an untyped one. A mix of integer and
+// floating-point columns widens to float64, mirroring pandas. Any other
+// disagreement (say string and int64) is a genuine conflict and returns nil,
+// meaning the caller should fall back to an untyped (any) Series.
+//
+// A nil entry in types, or an interface-kinded one (an AnySeries), also yields
+// nil: an untyped input cannot constrain the result.
+func concatDType(types []reflect.Type) reflect.Type {
+	if len(types) == 0 {
+		return nil
+	}
+
+	var (
+		first    reflect.Type
+		allSame  = true
+		allNum   = true
+		anyFloat bool
+	)
+
+	for i, t := range types {
+		// An untyped input cannot constrain the result.
+		if t == nil || t.Kind() == reflect.Interface {
+			return nil
+		}
+		if i == 0 {
+			first = t
+		} else if t != first {
+			allSame = false
+		}
+		switch t.Kind() {
+		case reflect.Float64:
+			anyFloat = true
+		case reflect.Int64, reflect.Int:
+			// integer, no flag needed
+		default:
+			allNum = false
+		}
+	}
+
+	switch {
+	case allSame:
+		return first
+	case allNum && anyFloat:
+		// Mixed integer and floating-point columns widen, mirroring pandas.
+		return reflect.TypeOf(float64(0))
+	case allNum:
+		// Different integer widths (int vs int64) all back an Int64Series.
+		return reflect.TypeOf(int64(0))
+	default:
+		// Genuine conflict, e.g. string and int64.
+		return nil
+	}
+}
+
+// appendConcatValue appends v to s, widening integers to float64 when the target
+// column resolved to a float dtype (see concatDType).
+func appendConcatValue(s collection.Series, dtype reflect.Type, v any) error {
+	if dtype != nil {
+		switch dtype.Kind() {
+		case reflect.Float64:
+			if f, ok := toFloat64(v); ok {
+				return s.Append(f)
+			}
+		case reflect.Int64, reflect.Int:
+			switch v.(type) {
+			case int, int8, int16, int32, int64:
+				return s.Append(toInt64(v))
+			}
+		}
+	}
+	return s.Append(v)
 }
 
 // copyDataFrame creates a shallow copy of a DataFrame.

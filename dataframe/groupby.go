@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 
 	"github.com/apoplexi24/gpandas/utils/collection"
 )
@@ -40,20 +39,17 @@ func (df *DataFrame) GroupBy(by []string, axis int) (*GroupBy, error) {
 		}
 	}
 
+	if len(by) == 0 {
+		return nil, fmt.Errorf("at least one grouping column is required")
+	}
+
 	groups := make(map[string][]int)
 	numRows := df.Len()
 
-	// Iterate over rows to build groups
+	// Iterate over rows to build groups. The key is built with a non-printable
+	// separator so that multi-column keys cannot collide (see keys.go).
 	for i := 0; i < numRows; i++ {
-		keyParts := make([]string, len(by))
-		for j, colName := range by {
-			val, err := df.Columns[colName].At(i)
-			if err != nil {
-				return nil, err
-			}
-			keyParts[j] = fmt.Sprintf("%v", val)
-		}
-		key := strings.Join(keyParts, "_") // Simple key generation
+		key := compositeKeyAt(df, by, i)
 		groups[key] = append(groups[key], i)
 	}
 

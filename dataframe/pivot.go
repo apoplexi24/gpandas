@@ -3,7 +3,6 @@ package dataframe
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/apoplexi24/gpandas/utils/collection"
 )
@@ -124,16 +123,18 @@ func (df *DataFrame) PivotTable(opts PivotTableOptions) (*DataFrame, error) {
 	}
 	sort.Strings(sortedColumnValues)
 
-	// Collect unique index combinations
+	// Collect unique index combinations. The grouping key is built with a
+	// non-printable separator so composite keys cannot collide (see keys.go);
+	// the display values are kept separately for the output index columns.
 	indexKeys := make(map[string][]string) // key -> original index values
 	for i := 0; i < numRows; i++ {
-		keyParts := make([]string, len(opts.Index))
-		for j, col := range opts.Index {
-			val, _ := df.Columns[col].At(i)
-			keyParts[j] = fmt.Sprintf("%v", val)
-		}
-		key := strings.Join(keyParts, "\x00")
+		key := compositeKeyAt(df, opts.Index, i)
 		if _, exists := indexKeys[key]; !exists {
+			keyParts := make([]string, len(opts.Index))
+			for j, col := range opts.Index {
+				val, _ := df.Columns[col].At(i)
+				keyParts[j] = fmt.Sprintf("%v", val)
+			}
 			indexKeys[key] = keyParts
 		}
 	}
@@ -150,12 +151,7 @@ func (df *DataFrame) PivotTable(opts PivotTableOptions) (*DataFrame, error) {
 	aggData := make(map[string]map[string]map[string][]float64)
 	for i := 0; i < numRows; i++ {
 		// Build index key
-		keyParts := make([]string, len(opts.Index))
-		for j, col := range opts.Index {
-			val, _ := df.Columns[col].At(i)
-			keyParts[j] = fmt.Sprintf("%v", val)
-		}
-		indexKey := strings.Join(keyParts, "\x00")
+		indexKey := compositeKeyAt(df, opts.Index, i)
 
 		// Get column value
 		if df.Columns[opts.Columns].IsNull(i) {

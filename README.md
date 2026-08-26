@@ -39,6 +39,7 @@ GPandas is designed to provide a familiar and efficient way to work with tabular
     - **Left Join (`LeftMerge`)**: Keep all rows from the left DataFrame, and matching rows from the right.
     - **Right Join (`RightMerge`)**: Keep all rows from the right DataFrame, and matching rows from the left.
     - **Full Outer Join (`FullMerge`)**: Keep all rows from both DataFrames, filling in missing values with `nil`.
+    - **Overlapping columns**: Columns other than the join key that exist in both DataFrames are suffixed `_x` (left) and `_y` (right), matching pandas, so neither side's data is lost. If a suffixed name would still collide with an existing column, an error is returned.
 - **Data Export**:
     - **CSV Export**:  Export DataFrames to CSV format using `DataFrame.ToCSV()`, with options for:
         - Custom separators.
@@ -191,7 +192,7 @@ See `examples/advanced/` for a complete working example of aggregation, window f
 
 ### Multi-key Merge
 
-- **`MergeOn(other, on, how)`**: Join two DataFrames on multiple key columns (inner, left, right, full), generalizing `Merge`.
+- **`MergeOn(other, on, how)`**: Join two DataFrames on multiple key columns (inner, left, right, full), generalizing `Merge`. Overlapping non-key columns are suffixed `_x`/`_y` as in `Merge`.
 
 ### Additional Visualizations
 

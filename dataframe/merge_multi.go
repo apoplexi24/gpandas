@@ -3,7 +3,6 @@ package dataframe
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/apoplexi24/gpandas/utils/collection"
 )
@@ -14,7 +13,8 @@ import (
 // The keys in `on` must exist in both DataFrames. The merge type `how` is one of
 // InnerMerge, LeftMerge, RightMerge, or FullMerge. Rows with a null in any key
 // column never match. The result contains the left columns followed by the right
-// columns excluding the join keys.
+// columns excluding the join keys; non-key columns present in both frames are
+// suffixed "_x" (left) and "_y" (right).
 //
 // This is analogous to pd.merge(left, right, on=[...], how=...) in pandas.
 //
@@ -53,7 +53,7 @@ func (df *DataFrame) MergeOn(other *DataFrame, on []string, how MergeHow) (*Data
 	// Build composite-key lookup for the right DataFrame (skipping null keys).
 	rightMap := make(map[string][]int)
 	for j := 0; j < rightRows; j++ {
-		key, ok := compositeKey(other, on, j)
+		key, ok := compositeKeyAtNonNull(other, on, j)
 		if !ok {
 			continue
 		}
@@ -61,13 +61,19 @@ func (df *DataFrame) MergeOn(other *DataFrame, on []string, how MergeHow) (*Data
 	}
 
 	// Result column layout: all left columns, then right columns except keys.
-	resultColumns := make([]string, 0, len(df.ColumnOrder)+len(other.ColumnOrder))
-	resultColumns = append(resultColumns, df.ColumnOrder...)
+	// Non-key columns present in both frames are suffixed "_x"/"_y".
+	outCols, err := buildMergeColumns(df, other, onSet)
+	if err != nil {
+		return nil, err
+	}
+	resultColumns := make([]string, len(outCols))
+	for i, oc := range outCols {
+		resultColumns[i] = oc.name
+	}
 	rightExtra := make([]string, 0, len(other.ColumnOrder))
 	for _, col := range other.ColumnOrder {
 		if !onSet[col] {
 			rightExtra = append(rightExtra, col)
-			resultColumns = append(resultColumns, col)
 		}
 	}
 
@@ -86,8 +92,8 @@ func (df *DataFrame) MergeOn(other *DataFrame, on []string, how MergeHow) (*Data
 	}
 
 	// Convert rows to columnar Series.
-	cols := make(map[string]collection.Series, len(resultColumns))
-	for colIdx, colName := range resultColumns {
+	cols := make(map[string]collection.Series, len(outCols))
+	for colIdx, oc := range outCols {
 		values := make([]any, len(rows))
 		nulls := make([]bool, len(rows))
 		for r, row := range rows {
@@ -98,11 +104,11 @@ func (df *DataFrame) MergeOn(other *DataFrame, on []string, how MergeHow) (*Data
 				nulls[r] = true
 			}
 		}
-		s, err := createTypedSeriesFromMerge(values, nulls, df, other, colName, "")
+		s, err := seriesFromMergeValues(values, nulls, oc.source)
 		if err != nil {
 			return nil, err
 		}
-		cols[colName] = s
+		cols[oc.name] = s
 	}
 
 	index := make([]string, len(rows))
@@ -125,24 +131,6 @@ func dfRowCount(df *DataFrame) int {
 		}
 	}
 	return n
-}
-
-// compositeKey builds a string key from the given columns at row i. Returns
-// (key, false) if any key column is null.
-func compositeKey(df *DataFrame, on []string, i int) (string, bool) {
-	var b strings.Builder
-	for k, col := range on {
-		s := df.Columns[col]
-		if s.IsNull(i) {
-			return "", false
-		}
-		if k > 0 {
-			b.WriteByte('\x01')
-		}
-		v, _ := s.At(i)
-		fmt.Fprintf(&b, "%v", v)
-	}
-	return b.String(), true
 }
 
 // leftValues appends all left-row values for row i to a mergeRow.
@@ -182,7 +170,7 @@ func valueAt(s collection.Series, i int) any {
 func multiInner(df, other *DataFrame, on, rightExtra []string, rightMap map[string][]int, leftRows int) []mergeRow {
 	var result []mergeRow
 	for i := 0; i < leftRows; i++ {
-		key, ok := compositeKey(df, on, i)
+		key, ok := compositeKeyAtNonNull(df, on, i)
 		if !ok {
 			continue
 		}
@@ -199,7 +187,7 @@ func multiInner(df, other *DataFrame, on, rightExtra []string, rightMap map[stri
 func multiLeft(df, other *DataFrame, on, rightExtra []string, rightMap map[string][]int, leftRows int) []mergeRow {
 	var result []mergeRow
 	for i := 0; i < leftRows; i++ {
-		key, ok := compositeKey(df, on, i)
+		key, ok := compositeKeyAtNonNull(df, on, i)
 		var matches []int
 		if ok {
 			matches = rightMap[key]
@@ -225,14 +213,14 @@ func multiRight(df, other *DataFrame, on []string, onSet map[string]bool, rightE
 	// Build left lookup.
 	leftMap := make(map[string][]int)
 	for i := 0; i < leftRows; i++ {
-		if key, ok := compositeKey(df, on, i); ok {
+		if key, ok := compositeKeyAtNonNull(df, on, i); ok {
 			leftMap[key] = append(leftMap[key], i)
 		}
 	}
 
 	var result []mergeRow
 	for j := 0; j < rightRows; j++ {
-		key, ok := compositeKey(other, on, j)
+		key, ok := compositeKeyAtNonNull(other, on, j)
 		var matches []int
 		if ok {
 			matches = leftMap[key]
@@ -270,13 +258,13 @@ func multiFull(df, other *DataFrame, on []string, onSet map[string]bool, rightEx
 	// Track processed right keys (those that matched at least one left row).
 	processed := make(map[string]bool)
 	for i := 0; i < leftRows; i++ {
-		if key, ok := compositeKey(df, on, i); ok {
+		if key, ok := compositeKeyAtNonNull(df, on, i); ok {
 			processed[key] = true
 		}
 	}
 
 	for j := 0; j < rightRows; j++ {
-		key, ok := compositeKey(other, on, j)
+		key, ok := compositeKeyAtNonNull(other, on, j)
 		if ok && processed[key] {
 			continue
 		}
