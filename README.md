@@ -161,6 +161,45 @@ _ = df.Assign("Grew", mask)
 
 See `examples/arithmetic/` for a complete working example.
 
+### Numeric Cleanup Operations
+
+These operate on the whole DataFrame and return a new one, leaving the original untouched. Numeric columns are transformed, non-numeric columns pass through unchanged, and both column order and index labels are preserved. Nulls stay null throughout.
+
+- **`Round(decimals)`**: Round numeric columns to `decimals` places; a negative value rounds to the left of the decimal point. Halfway values round to the nearest even number, matching pandas and NumPy. Integer columns stay `int64`.
+- **`Clip(lower, upper)`**: Bound values to `[lower, upper]`. Pass `math.Inf(-1)` or `math.Inf(1)` to leave one side unbounded. A reversed range or a `NaN` bound returns an error. Integer columns stay `int64` when both bounds are whole numbers.
+- **`Abs()`**: Absolute value. Integer columns stay `int64`.
+- **`Diff(periods)`**: Subtract the value `periods` rows away. Positive periods look backward, negative look forward, and cells with no counterpart become null exactly as in `Shift`. Integer columns stay `int64`, since the null mask removes pandas' need to promote to float.
+- **`PctChange(periods)`**: Fractional change, `(current - previous) / previous`. Always `float64`; a previous value of zero yields `±Inf` or `NaN` rather than an error.
+- **`Rank(method)`**: Ascending 1-based ranks as `float64`. `method` is a `RankMethod`: `RankAverage` (default, also the zero value), `RankMin`, `RankMax`, `RankDense`, or `RankFirst`. Nulls take no rank, so they never shift the ranks around them.
+
+For the values `10, 20, 20, 30`, the ranking methods give:
+
+| Method | Ranks |
+|--------|-------|
+| `RankAverage` | 1, 2.5, 2.5, 4 |
+| `RankMin` | 1, 2, 2, 4 |
+| `RankMax` | 1, 3, 3, 4 |
+| `RankDense` | 1, 2, 2, 3 |
+| `RankFirst` | 1, 2, 3, 4 |
+
+```go
+// Round to cents, then bound to a sane range
+rounded, err := df.Round(2)
+if err != nil {
+    log.Fatal(err)
+}
+bounded, _ := rounded.Clip(0, math.Inf(1)) // floor at zero, no ceiling
+
+// Day-over-day change and growth rate
+delta, _ := df.Diff(1)
+growth, _ := df.PctChange(1)
+
+// Dense ranking leaves no gap after a tie
+ranks, _ := df.Rank(dataframe.RankDense)
+```
+
+See `examples/numeric_ops/` for a complete working example.
+
 ### Handling Missing Data
 
 GPandas provides null-aware cleaning operations:
