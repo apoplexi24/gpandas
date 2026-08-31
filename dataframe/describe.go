@@ -301,8 +301,15 @@ func computeDescribe(vals []float64) []float64 {
 	return out
 }
 
-// stdSample computes the sample standard deviation (ddof=1).
+// stdSample computes the sample standard deviation (ddof=1). It is the square
+// root of varSample, so Std and Var always agree.
 func stdSample(vals []float64) float64 {
+	return math.Sqrt(varSample(vals))
+}
+
+// varSample computes the sample variance (ddof=1). Fewer than two values yields
+// NaN because the estimator is undefined.
+func varSample(vals []float64) float64 {
 	n := len(vals)
 	if n < 2 {
 		return math.NaN()
@@ -313,7 +320,7 @@ func stdSample(vals []float64) float64 {
 		d := v - mean
 		ss += d * d
 	}
-	return math.Sqrt(ss / float64(n-1))
+	return ss / float64(n-1)
 }
 
 // quantileSorted computes the q-quantile (0<=q<=1) of an ascending-sorted slice

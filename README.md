@@ -94,9 +94,38 @@ See `examples/select/` for a complete working example.
 GPandas provides exploratory data analysis helpers over numeric columns:
 
 - **`Describe()`**: Returns a DataFrame of `count`, `mean`, `std` (sample, ddof=1), `min`, `25%`, `50%`, `75%`, `max` per numeric column. Quantiles use linear interpolation and nulls are ignored.
-- **Column aggregations**: `Mean()`, `Sum()`, `Std()`, `Median()`, `Min()`, `Max()` each return a `map[string]float64` keyed by numeric column name.
+- **Column aggregations**: `Mean()`, `Sum()`, `Std()`, `Var()`, `Median()`, `Min()`, `Max()` each return a `map[string]float64` keyed by numeric column name. `Var()` is the sample variance (ddof=1), so it is always the square of `Std()`.
+- **`Quantile(q)`**: Returns a `map[string]float64` of the `q`-quantile per numeric column, using the same linear interpolation as `Describe`. `q` must be in `[0, 1]`; anything else (including `NaN`) returns an error instead of panicking.
+- **`Skew()` / `Kurt()`**: Sample skewness (adjusted Fisher-Pearson, G1) and excess kurtosis (unbiased Fisher, G2, normal = 0), matching pandas' defaults. Skewness needs at least three values, kurtosis at least four; fewer values or zero variance yields `NaN`.
+- **`Mode()`**: Returns a `map[string][]any` of the most frequent value(s) of **every** column, not just numeric ones. Values tied for the highest frequency are all returned, sorted ascending; an all-null column yields an empty slice.
+- **`IdxMax()` / `IdxMin()`**: Return a `map[string]string` of the index label where each numeric column reaches its maximum or minimum. Ties resolve to the earliest row, `NaN` is ignored, and a column with no usable value is omitted (it has no label to report).
+- **`Any()` / `All()`**: Return a `map[string]bool` of boolean reductions. Boolean columns are truthy when `true`, numeric columns when non-zero; other types are omitted. Over an empty selection `Any()` is `false` and `All()` is `true`, as in pandas.
 - **`NullCount()`**: Returns a `map[string]int` of null counts per column.
 - **`ValueCounts(column)`**: Returns a DataFrame of unique values and their frequencies (descending), excluding nulls.
+
+Nulls are excluded from every reduction above, so a missing value never counts as zero.
+
+```go
+// Spread: Var is Std squared, and Quantile matches Describe's percentile rows
+fmt.Println(df.Var()["Price"])
+
+p90, err := df.Quantile(0.9)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(p90["Price"])
+
+// Where is the peak? IdxMax reports the index label, not the value
+fmt.Println(df.IdxMax()["Price"]) // e.g. "Gizmo"
+
+// Most common value(s) per column, ties included
+fmt.Println(df.Mode()["Price"]) // e.g. [9.99 24.5]
+
+// Boolean reductions
+if !df.All()["InStock"] { /* at least one row is out of stock */ }
+```
+
+See `examples/stats/` for a complete working example.
 
 ### Transforming Columns
 
