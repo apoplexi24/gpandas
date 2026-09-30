@@ -1,8 +1,8 @@
 package dataframe
 
 import (
+	"errors"
 	"fmt"
-	"math"
 	"sort"
 
 	"github.com/apoplexi24/gpandas/utils/collection"
@@ -71,252 +71,158 @@ func (gb *GroupBy) getSortedKeys() []string {
 	return keys
 }
 
-// aggregate applies a function to each column of each group.
-func (gb *GroupBy) aggregate(aggFunc func(collection.Series) (any, error)) (*DataFrame, error) {
-	sortedKeys := gb.getSortedKeys()
-	numGroups := len(sortedKeys)
+// The methods below return one row per group: the grouping columns, keeping
+// their original value types, followed by one column per aggregated column
+// under its original name. Rows are ordered by group key. Each method gives the
+// same values as the equivalent Agg spec, because both run the same kernels.
+//
+// Numeric methods (Mean, Sum, Min, Max, Std, Var, Median) cover the numeric
+// columns and skip the rest, as DataFrame.Mean does. Count, First, and Last
+// cover every non-grouping column.
 
-	// Identify numeric columns to aggregate (excluding grouping columns if they are not numeric,
-	// but pandas usually keeps them as index. Here we will make them columns).
-	// For simplicity, we aggregate all columns that support the operation.
-	// We will reconstruct the grouping columns as the first columns.
+// Mean computes the mean of each numeric column per group. Nulls are skipped; a
+// group with no values yields null.
+//
+// This is analogous to df.groupby(...).mean(numeric_only=True) in pandas.
+func (gb *GroupBy) Mean() (*DataFrame, error) { return gb.aggregateEach("Mean", AggMean) }
 
-	resultCols := make(map[string]collection.Series)
-	resultOrder := make([]string, 0)
+// Sum computes the sum of each numeric column per group. Nulls are skipped; a
+// group with no values sums to 0, as in pandas.
+func (gb *GroupBy) Sum() (*DataFrame, error) { return gb.aggregateEach("Sum", AggSum) }
 
-	// Add grouping columns first
-	for _, colName := range gb.colNames {
-		resultCols[colName], _ = collection.NewStringSeriesFromData(make([]string, numGroups), nil) // Using StringSeries for keys for now
-		resultOrder = append(resultOrder, colName)
+// Min computes the minimum of each numeric column per group. A group with no
+// values yields null.
+func (gb *GroupBy) Min() (*DataFrame, error) { return gb.aggregateEach("Min", AggMin) }
+
+// Max computes the maximum of each numeric column per group. A group with no
+// values yields null.
+func (gb *GroupBy) Max() (*DataFrame, error) { return gb.aggregateEach("Max", AggMax) }
+
+// Std computes the sample standard deviation (ddof=1) of each numeric column per
+// group. A group with fewer than two values yields NaN, as in pandas.
+func (gb *GroupBy) Std() (*DataFrame, error) { return gb.aggregateEach("Std", AggStd) }
+
+// Var computes the sample variance (ddof=1) of each numeric column per group. A
+// group with fewer than two values yields NaN, as in pandas.
+func (gb *GroupBy) Var() (*DataFrame, error) { return gb.aggregateEach("Var", AggVar) }
+
+// Median computes the median of each numeric column per group. A group with no
+// values yields null.
+func (gb *GroupBy) Median() (*DataFrame, error) { return gb.aggregateEach("Median", AggMedian) }
+
+// Count counts the non-null values of every non-grouping column per group, as
+// int64. Use Size to count rows regardless of nulls.
+func (gb *GroupBy) Count() (*DataFrame, error) { return gb.aggregateEach("Count", AggCount) }
+
+// First returns the first non-null value of every non-grouping column per group.
+// A group whose column is entirely null yields null.
+func (gb *GroupBy) First() (*DataFrame, error) { return gb.aggregateEach("First", AggFirst) }
+
+// Last returns the last non-null value of every non-grouping column per group. A
+// group whose column is entirely null yields null.
+func (gb *GroupBy) Last() (*DataFrame, error) { return gb.aggregateEach("Last", AggLast) }
+
+// Size counts the rows in each group, nulls included, in a single int64 column
+// named "size" after the grouping columns.
+//
+// This is analogous to df.groupby(...).size() in pandas, returned as a
+// DataFrame rather than a Series.
+func (gb *GroupBy) Size() (*DataFrame, error) { return gb.aggregateEach("Size", AggSize) }
+
+// Cumcount numbers the rows of each group 0, 1, 2, ... in row order. The result
+// is aligned with the source DataFrame, so it can be added back with Assign.
+//
+// This is analogous to df.groupby(...).cumcount() in pandas.
+//
+// Example:
+//
+//	gb, _ := df.GroupBy([]string{"Dept"}, 0)
+//	nth, _ := gb.Cumcount()
+//	_ = df.Assign("NthInDept", nth)
+func (gb *GroupBy) Cumcount() (collection.Series, error) {
+	if gb == nil || gb.df == nil {
+		return nil, errors.New("Cumcount: GroupBy is nil")
+	}
+	out := make([]int64, gb.df.Len())
+	for _, rows := range gb.groups {
+		// Rows were appended in ascending order when the groups were built.
+		for pos, row := range rows {
+			out[row] = int64(pos)
+		}
+	}
+	return collection.NewInt64SeriesFromData(out, nil)
+}
+
+// Transform applies an aggregation per group and broadcasts each group's result
+// back to that group's rows, so the result has the same rows and index labels as
+// the source DataFrame. The grouping columns are left out, as in pandas.
+//
+// fn covers the same columns as the matching convenience method: numeric
+// functions cover numeric columns, AggCount, AggFirst, and AggLast cover every
+// non-grouping column, and AggSize yields a single "size" column.
+//
+// This is analogous to df.groupby(...).transform(fn) in pandas with a named
+// function.
+//
+// Example:
+//
+//	// Each salary alongside its department's mean salary
+//	gb, _ := df.GroupBy([]string{"Dept"}, 0)
+//	means, _ := gb.Transform(dataframe.AggMean)
+//	_ = df.Assign("DeptMean", means.Columns["Salary"])
+func (gb *GroupBy) Transform(fn AggFunc) (*DataFrame, error) {
+	if gb == nil || gb.df == nil {
+		return nil, errors.New("Transform: GroupBy is nil")
+	}
+	targets, err := gb.targetsFor(fn)
+	if err != nil {
+		return nil, fmt.Errorf("Transform: %w", err)
 	}
 
-	// Add other columns
-	for _, colName := range gb.df.ColumnOrder {
-		isGroupingCol := false
-		for _, gCol := range gb.colNames {
-			if colName == gCol {
-				isGroupingCol = true
-				break
-			}
-		}
-		if !isGroupingCol {
-			// Check if we can aggregate this column (e.g. numeric)
-			// For now, we try to aggregate everything and fill with null if fails or skip?
-			// Let's try to aggregate and see.
-			resultOrder = append(resultOrder, colName)
-			// We don't know the result type yet, assuming Float64 for numeric aggregations like Mean/Sum
-			// For Min/Max it could be same type.
-			// Let's assume Float64 for now for Mean/Sum.
-			resultCols[colName], _ = collection.NewFloat64SeriesFromData(make([]float64, numGroups), nil)
-		}
-	}
+	gb.df.RLock()
+	defer gb.df.RUnlock()
 
-	for i, key := range sortedKeys {
-		indices := gb.groups[key]
-
-		// Set grouping column values
-		// We need to parse the key back or take from first row. Taking from first row is safer for types.
-		firstIdx := indices[0]
-		for _, colName := range gb.colNames {
-			val, _ := gb.df.Columns[colName].At(firstIdx)
-			// We are forcing StringSeries for grouping cols above, so convert to string
-			resultCols[colName].Set(i, fmt.Sprintf("%v", val))
-		}
-
-		// Calculate aggregation for other columns
-		for _, colName := range resultOrder {
-			isGroupingCol := false
-			for _, gCol := range gb.colNames {
-				if colName == gCol {
-					isGroupingCol = true
-					break
-				}
-			}
-			if isGroupingCol {
-				continue
-			}
-
-			// Extract series for this group
-			// Optimization: Avoid full Slice, just iterate indices
-			// But Series interface doesn't support random access iterator easily without Slice.
-			// Let's use Slice for correctness first.
-			// We need a Slice method on Series that takes indices?
-			// We implemented Slice on DataFrame, let's use that logic or just manually extract.
-
-			originalSeries := gb.df.Columns[colName]
-			// Create a temporary series for the group
-			// This is inefficient, but works.
-			groupSeries := collection.NewSeriesOfTypeWithSize(originalSeries.DType(), len(indices))
-			for k, idx := range indices {
-				val, _ := originalSeries.At(idx)
-				if originalSeries.IsNull(idx) {
-					groupSeries.SetNull(k)
-				} else {
-					groupSeries.Set(k, val)
-				}
-			}
-
-			val, err := aggFunc(groupSeries)
+	n := gb.df.Len()
+	cols := make(map[string]collection.Series, len(targets))
+	order := make([]string, 0, len(targets))
+	for _, t := range targets {
+		series := gb.df.Columns[t.col] // nil for AggSize
+		values := make([]any, n)
+		for _, rows := range gb.groups {
+			v, err := aggregateGroup(series, rows, t.fn)
 			if err != nil {
-				// If aggregation fails (e.g. mean of strings), set to null
-				resultCols[colName].SetNull(i)
-			} else {
-				resultCols[colName].Set(i, val)
+				return nil, fmt.Errorf("Transform: column '%s': %w", t.col, err)
+			}
+			for _, row := range rows {
+				values[row] = v
 			}
 		}
-	}
-
-	// Construct DataFrame
-	// We need to set the Index to 0..n-1
-	index := make([]string, numGroups)
-	for i := 0; i < numGroups; i++ {
-		index[i] = fmt.Sprintf("%d", i)
+		s, err := seriesFromAnyValues(values)
+		if err != nil {
+			return nil, fmt.Errorf("Transform: building column '%s': %w", t.out, err)
+		}
+		cols[t.out] = s
+		order = append(order, t.out)
 	}
 
 	return &DataFrame{
-		Columns:     resultCols,
-		ColumnOrder: resultOrder,
-		Index:       index,
+		Columns:     cols,
+		ColumnOrder: order,
+		Index:       append([]string(nil), gb.df.Index...),
 	}, nil
 }
 
-// Mean computes the mean of each group.
-func (gb *GroupBy) Mean() (*DataFrame, error) {
-	return gb.aggregate(func(s collection.Series) (any, error) {
-		// Check if series is numeric
-		// This requires type switching or helper in Series
-		// For now, let's assume Float64Series or try to convert.
-
-		// We can iterate and sum.
-		sum := 0.0
-		count := 0
-		n := s.Len()
-		for i := 0; i < n; i++ {
-			if !s.IsNull(i) {
-				val, _ := s.At(i)
-				switch v := val.(type) {
-				case float64:
-					sum += v
-					count++
-				case int:
-					sum += float64(v)
-					count++
-				case int64:
-					sum += float64(v)
-					count++
-				default:
-					return nil, fmt.Errorf("non-numeric type")
-				}
-			}
-		}
-		if count == 0 {
-			return nil, nil // Null result
-		}
-		return sum / float64(count), nil
-	})
-}
-
-// Sum computes the sum of each group.
-func (gb *GroupBy) Sum() (*DataFrame, error) {
-	return gb.aggregate(func(s collection.Series) (any, error) {
-		sum := 0.0
-		count := 0
-		n := s.Len()
-		for i := 0; i < n; i++ {
-			if !s.IsNull(i) {
-				val, _ := s.At(i)
-				switch v := val.(type) {
-				case float64:
-					sum += v
-					count++
-				case int:
-					sum += float64(v)
-					count++
-				case int64:
-					sum += float64(v)
-					count++
-				default:
-					return nil, fmt.Errorf("non-numeric type")
-				}
-			}
-		}
-		if count == 0 {
-			return 0.0, nil // Return 0 for empty sum? Or null? Pandas returns 0 usually.
-		}
-		return sum, nil
-	})
-}
-
-// Min computes the minimum of each group.
-func (gb *GroupBy) Min() (*DataFrame, error) {
-	return gb.aggregate(func(s collection.Series) (any, error) {
-		var minVal float64
-		first := true
-		n := s.Len()
-		for i := 0; i < n; i++ {
-			if !s.IsNull(i) {
-				val, _ := s.At(i)
-				var fVal float64
-				switch v := val.(type) {
-				case float64:
-					fVal = v
-				case int:
-					fVal = float64(v)
-				case int64:
-					fVal = float64(v)
-				default:
-					return nil, fmt.Errorf("non-numeric type")
-				}
-
-				if first {
-					minVal = fVal
-					first = false
-				} else {
-					minVal = math.Min(minVal, fVal)
-				}
-			}
-		}
-		if first {
-			return nil, nil
-		}
-		return minVal, nil
-	})
-}
-
-// Max computes the maximum of each group.
-func (gb *GroupBy) Max() (*DataFrame, error) {
-	return gb.aggregate(func(s collection.Series) (any, error) {
-		var maxVal float64
-		first := true
-		n := s.Len()
-		for i := 0; i < n; i++ {
-			if !s.IsNull(i) {
-				val, _ := s.At(i)
-				var fVal float64
-				switch v := val.(type) {
-				case float64:
-					fVal = v
-				case int:
-					fVal = float64(v)
-				case int64:
-					fVal = float64(v)
-				default:
-					return nil, fmt.Errorf("non-numeric type")
-				}
-
-				if first {
-					maxVal = fVal
-					first = false
-				} else {
-					maxVal = math.Max(maxVal, fVal)
-				}
-			}
-		}
-		if first {
-			return nil, nil
-		}
-		return maxVal, nil
-	})
+// aggregateEach applies fn to every column it covers and names each result
+// column after its source column.
+func (gb *GroupBy) aggregateEach(name string, fn AggFunc) (*DataFrame, error) {
+	if gb == nil || gb.df == nil {
+		return nil, errors.New(name + ": GroupBy is nil")
+	}
+	targets, err := gb.targetsFor(fn)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return gb.aggregateTargets(name, targets)
 }
 
 // Apply applies a function to each group and combines the results.

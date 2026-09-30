@@ -255,10 +255,29 @@ See `examples/cleaning/` for a complete working example of missing-data handling
 
 GPandas supports flexible aggregation and time-series style window operations:
 
-- **`GroupBy(...).Agg(spec)`**: Apply multiple aggregation functions per column at once, e.g. `gb.Agg(map[string][]dataframe.AggFunc{"Salary": {dataframe.AggSum, dataframe.AggMean}})`. Supported functions: `AggSum`, `AggMean`, `AggCount`, `AggMin`, `AggMax`, `AggStd`, `AggMedian`, `AggFirst`, `AggLast`. Result columns are named `<column>_<func>`.
+- **`GroupBy(...).Agg(spec)`**: Apply multiple aggregation functions per column at once, e.g. `gb.Agg(map[string][]dataframe.AggFunc{"Salary": {dataframe.AggSum, dataframe.AggMean}})`. Supported functions: `AggSum`, `AggMean`, `AggCount`, `AggMin`, `AggMax`, `AggStd`, `AggVar`, `AggMedian`, `AggFirst`, `AggLast`, `AggSize`. Result columns are named `<column>_<func>`.
+- **GroupBy convenience methods**: `Mean()`, `Sum()`, `Min()`, `Max()`, `Std()`, `Var()`, `Median()`, `Count()`, `First()`, `Last()`, and `Size()`. Each returns one row per group with the grouping columns (keeping their original types) followed by the aggregated columns under their original names, and gives the same values as the equivalent `Agg` spec. The numeric methods cover numeric columns only; `Count`, `First`, and `Last` cover every column. `Count` skips nulls, while `Size` counts rows into a single `size` column. `Std` and `Var` are sample statistics (ddof=1) and are `NaN` for a one-row group.
+- **`GroupBy(...).Cumcount()`**: Number the rows within each group 0, 1, 2, ... as an `int64` Series aligned with the original rows.
+- **`GroupBy(...).Transform(fn)`**: Apply an `AggFunc` per group and broadcast each result back to that group's rows. The result has the source DataFrame's rows and index, without the grouping columns, so its columns can be added back with `Assign`.
 - **`Rolling(window)`**: Moving-window aggregations — `.Mean()`, `.Sum()`, `.Min()`, `.Max()`, `.Std()`. Positions without a full window of non-null values are null.
 - **`Shift(periods)`**: Shift values down (positive) or up (negative), filling vacated cells with null.
 - **`CumSum()` / `CumMax()` / `CumMin()` / `CumProd()`**: Cumulative operations over numeric columns; nulls are skipped and preserved.
+
+```go
+gb, _ := df.GroupBy([]string{"Dept"}, 0)
+spread, _ := gb.Var()   // sample variance per department
+heads, _ := gb.Size()   // rows per department
+
+// Each salary next to its department's mean
+means, _ := gb.Transform(dataframe.AggMean)
+_ = df.Assign("DeptMean", means.Columns["Salary"])
+
+// 0, 1, 2, ... within each department
+nth, _ := gb.Cumcount()
+_ = df.Assign("NthInDept", nth)
+```
+
+See `examples/groupby/` for a complete working example.
 
 ### Reshaping with Stack, Unstack, and MultiIndex
 
