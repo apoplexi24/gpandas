@@ -118,7 +118,7 @@ func TestProperty3_TypeCompatibilityValidation_LineCharts(t *testing.T) {
 
 			// Render line chart - should fail with type error
 			err = plot.RenderLine(xSeries, []collection.Series{ySeries}, []string{"Series 1"}, opts)
-			
+
 			// Should return an error
 			return err != nil
 		},
@@ -289,7 +289,7 @@ func TestProperty6_MultiSeriesLineChartSupport(t *testing.T) {
 			contentStr := string(content)
 			hasSeriesA := false
 			hasSeriesB := false
-			
+
 			// Check for series names in the content
 			for _, name := range seriesNames {
 				if name == "Series A" && len(contentStr) > 0 {

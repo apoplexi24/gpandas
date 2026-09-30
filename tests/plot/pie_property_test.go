@@ -118,7 +118,7 @@ func TestProperty3_TypeCompatibilityValidation_PieCharts(t *testing.T) {
 
 			// Render pie chart - should fail with type error
 			err = plot.RenderPie(labelSeries, valueSeries, opts)
-			
+
 			// Should return an error
 			return err != nil
 		},

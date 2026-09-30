@@ -31,7 +31,7 @@ func RenderLine(xSeries collection.Series, ySeriesList []collection.Series, seri
 		return fmt.Errorf("RenderLine: ySeriesList is empty")
 	}
 	if len(seriesNames) != len(ySeriesList) {
-		return fmt.Errorf("RenderLine: seriesNames length (%d) does not match ySeriesList length (%d)", 
+		return fmt.Errorf("RenderLine: seriesNames length (%d) does not match ySeriesList length (%d)",
 			len(seriesNames), len(ySeriesList))
 	}
 

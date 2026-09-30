@@ -105,7 +105,7 @@ func convertToPieData(labelSeries, valueSeries collection.Series) ([]opts.PieDat
 
 	// Ensure both Series have the same length
 	if labelSeries.Len() != valueSeries.Len() {
-		return nil, fmt.Errorf("labelSeries length (%d) does not match valueSeries length (%d)", 
+		return nil, fmt.Errorf("labelSeries length (%d) does not match valueSeries length (%d)",
 			labelSeries.Len(), valueSeries.Len())
 	}
 

@@ -61,7 +61,6 @@ func genSeriesWithNulls(minLen, maxLen int) gopter.Gen {
 	}, reflect.TypeOf(0))
 }
 
-
 // Property 5: Null Value Exclusion
 // For any Series containing null values, when converted to chart data, the resulting
 // chart data array should contain only non-null values and should have length equal to
@@ -284,7 +283,7 @@ func TestProperty9_NumericSeriesExtraction(t *testing.T) {
 
 			// Validate it's numeric - should fail
 			err = plot.ValidateNumericSeriesForTest(series)
-			
+
 			// Should return an error
 			return err != nil
 		},
@@ -354,7 +353,7 @@ func TestProperty10_StringSeriesExtraction(t *testing.T) {
 
 			// Convert to string slice - should fail
 			_, err = plot.ConvertToStringSliceForTest(series)
-			
+
 			// Should return an error
 			return err != nil
 		},

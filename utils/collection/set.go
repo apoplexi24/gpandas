@@ -74,11 +74,13 @@ func (s Set[T]) Filter(P FilterFunc[T]) (Set[T], error) {
 // The resulting Set contains all unique elements from both input sets in an arbitrary order.
 //
 // Parameters:
-//   s2: The input Set[T] to union with the current set.
+//
+//	s2: The input Set[T] to union with the current set.
 //
 // Returns:
-//   A Set of type Set[T] containing all unique elements from both input sets.
-//   An error if the operation fails.
+//
+//	A Set of type Set[T] containing all unique elements from both input sets.
+//	An error if the operation fails.
 func (s Set[T]) Union(s2 Set[T]) (Set[T], error) {
 	res, err := NewSet[T]()
 	if err != nil {
@@ -98,10 +100,12 @@ func (s Set[T]) Union(s2 Set[T]) (Set[T], error) {
 // The resulting slice contains all the elements from the set in an arbitrary order.
 //
 // Parameters:
-//   s: A Set[T] from which to create the slice.
+//
+//	s: A Set[T] from which to create the slice.
 //
 // Returns:
-//   A slice of type []T containing all elements from the input set.
+//
+//	A slice of type []T containing all elements from the input set.
 func ToSlice[T comparable](s Set[T]) ([]T, error) {
 	result_slice := make([]T, 0, len(s))
 	for k := range s {
@@ -115,10 +119,12 @@ func ToSlice[T comparable](s Set[T]) ([]T, error) {
 // The resulting Set contains all the elements from the input slice in an arbitrary order.
 //
 // Parameters:
-//   slice: A slice of type []T from which to create the Set.
+//
+//	slice: A slice of type []T from which to create the Set.
 //
 // Returns:
-//   A Set of type Set[T] containing all elements from the input slice.
+//
+//	A Set of type Set[T] containing all elements from the input slice.
 func ToSet[T comparable](slice []T) (Set[T], error) {
 	result_set, err := NewSet[T]()
 	if err != nil {
@@ -136,11 +142,13 @@ func ToSet[T comparable](slice []T) (Set[T], error) {
 // The resulting Set contains all the elements that are common to both input sets in an arbitrary order.
 //
 // Parameters:
-//   s2: The input Set[T] to intersect with the current set.
+//
+//	s2: The input Set[T] to intersect with the current set.
 //
 // Returns:
-//   A Set of type Set[T] containing all elements that are common to both input sets.
-//   An error if the operation fails.
+//
+//	A Set of type Set[T] containing all elements that are common to both input sets.
+//	An error if the operation fails.
 func (s Set[T]) Intersect(s2 Set[T]) (Set[T], error) {
 	res, err := NewSet[T]()
 	if err != nil {
@@ -161,11 +169,13 @@ func (s Set[T]) Intersect(s2 Set[T]) (Set[T], error) {
 // The resulting Set contains all the elements that are unique to the current set in an arbitrary order.
 //
 // Parameters:
-//   s2: The input Set[T] to find the difference with the current set.
+//
+//	s2: The input Set[T] to find the difference with the current set.
 //
 // Returns:
-//   A Set of type Set[T] containing all elements that are unique to the current set.
-//   An error if the operation fails.
+//
+//	A Set of type Set[T] containing all elements that are unique to the current set.
+//	An error if the operation fails.
 func (s Set[T]) Difference(s2 Set[T]) (Set[T], error) {
 	res, err := NewSet[T]()
 	if err != nil {
@@ -187,11 +197,13 @@ func (s Set[T]) Difference(s2 Set[T]) (Set[T], error) {
 // If all elements in the first set exist in the second set, it returns true and nil.
 //
 // Parameters:
-//   s2: The input Set[T] to compare with the current set.
+//
+//	s2: The input Set[T] to compare with the current set.
 //
 // Returns:
-//   A boolean indicating if the sets are equal.
-//   An any value representing the first element that does not exist in the second set if the sets are not equal, or nil if they are equal.
+//
+//	A boolean indicating if the sets are equal.
+//	An any value representing the first element that does not exist in the second set if the sets are not equal, or nil if they are equal.
 func (s Set[T]) Compare(s2 Set[T]) (bool, any) {
 	// Check if lengths are the same
 	if len(s) != len(s2) {

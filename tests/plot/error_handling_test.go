@@ -96,10 +96,10 @@ func TestErrorHandling_MissingColumn(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		plotFunc     func() error
-		operation    string
-		missingCol   string
+		name       string
+		plotFunc   func() error
+		operation  string
+		missingCol string
 	}{
 		{
 			name: "PlotBar with missing x column",
@@ -186,7 +186,7 @@ func TestErrorHandling_MissingColumn(t *testing.T) {
 	}
 }
 
-// TestErrorHandling_TypeMismatch tests error handling for incompatible column types 
+// TestErrorHandling_TypeMismatch tests error handling for incompatible column types
 func TestErrorHandling_TypeMismatch(t *testing.T) {
 	// Create DataFrame with string columns (incompatible for numeric operations)
 	col1, _ := collection.NewStringSeriesFromData([]string{"A", "B", "C"}, nil)
@@ -550,7 +550,7 @@ func TestErrorHandling_NilDataFrame(t *testing.T) {
 }
 
 // TestErrorHandling_ValidationOrder tests that validation occurs in the correct order
-// to provide the most relevant error message 
+// to provide the most relevant error message
 func TestErrorHandling_ValidationOrder(t *testing.T) {
 	t.Run("Empty DataFrame error takes precedence over missing column", func(t *testing.T) {
 		df := &dataframe.DataFrame{

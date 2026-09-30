@@ -239,7 +239,7 @@ func (GoPandas) Read_csv(filepath string) (*dataframe.DataFrame, error) {
 		Index int
 		Row   []string
 	}
-	rowChan := make(chan RowData, 100)                 // Buffered channel to hold rows
+	rowChan := make(chan RowData, 100)                    // Buffered channel to hold rows
 	resultChan := make(chan [][]string, runtime.NumCPU()) // Channel to hold columnar string data
 	var wg sync.WaitGroup
 

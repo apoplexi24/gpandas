@@ -118,7 +118,7 @@ func TestProperty3_TypeCompatibilityValidation_BarCharts(t *testing.T) {
 
 			// Render bar chart - should fail with type error
 			err = plot.RenderBar(xSeries, ySeries, opts)
-			
+
 			// Should return an error
 			return err != nil
 		},

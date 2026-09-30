@@ -229,7 +229,7 @@ func TestFilterChaining(t *testing.T) {
 		df := filterTestDF()
 		_, err := df.
 			Filter("City", dataframe.Equals, "NYC").
-			Filter("Missing", dataframe.Equals, 1). // errors here
+			Filter("Missing", dataframe.Equals, 1).  // errors here
 			Filter("Age", dataframe.GreaterThan, 0). // should be skipped
 			Result()
 		if err == nil {

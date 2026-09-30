@@ -258,7 +258,7 @@ func TestProperty8_InvalidPathErrorHandling(t *testing.T) {
 
 			// Test PlotBar with invalid path
 			err = df.PlotBar("x", "y", opts)
-			
+
 			// Should return an error
 			return err != nil
 		},
