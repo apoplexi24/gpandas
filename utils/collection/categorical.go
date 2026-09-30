@@ -39,6 +39,32 @@ func NewCategoricalSeriesFromStrings(values []string, mask []bool) (*Categorical
 	return s, nil
 }
 
+// NewCategoricalSeriesFromCodes builds a CategoricalSeries from precomputed codes
+// and a fixed category list. Unlike NewCategoricalSeriesFromStrings, category
+// order is taken as given and categories that no row uses are kept, which
+// matters when the categories carry meaning of their own (for example, the bins
+// of a histogram). A code of -1 is null; any other code must index categories,
+// and categories must be unique.
+func NewCategoricalSeriesFromCodes(codes []int32, categories []string) (*CategoricalSeries, error) {
+	s := &CategoricalSeries{
+		codes:      append([]int32(nil), codes...),
+		categories: append([]string(nil), categories...),
+		catIndex:   make(map[string]int32, len(categories)),
+	}
+	for i, c := range s.categories {
+		if _, dup := s.catIndex[c]; dup {
+			return nil, fmt.Errorf("duplicate category %q", c)
+		}
+		s.catIndex[c] = int32(i)
+	}
+	for i, code := range s.codes {
+		if code < -1 || int(code) >= len(s.categories) {
+			return nil, fmt.Errorf("code %d at row %d is out of range for %d categories", code, i, len(s.categories))
+		}
+	}
+	return s, nil
+}
+
 // codeFor returns the code for a category, registering it if new. Caller must
 // hold no lock (used during construction) or the write lock.
 func (s *CategoricalSeries) codeFor(v string) int32 {

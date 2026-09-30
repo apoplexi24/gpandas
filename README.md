@@ -200,6 +200,24 @@ ranks, _ := df.Rank(dataframe.RankDense)
 
 See `examples/numeric_ops/` for a complete working example.
 
+### Encoding and Binning
+
+Pre-processing for ML and analytics. Each method returns a new DataFrame and leaves the original untouched; other columns and index labels are preserved.
+
+- **`Cut(column, bins, labels)`**: Replace a numeric column with a categorical one naming the bin each value falls into. `bins` are strictly increasing edges, and bins are right-closed, `(low, high]`, as in pandas, so a value equal to the lowest edge is excluded. Use `math.Inf(-1)`/`math.Inf(1)` as outer edges to catch everything. Pass `nil` labels for interval names like `"(0, 10]"`. Nulls, `NaN`, and out-of-range values become null.
+- **`Qcut(column, q, labels)`**: Like `Cut`, but the edges are the column's quantiles, so each of the `q` bins holds roughly the same number of rows. Uses the same linear interpolation as `Quantile`. The first bin includes the minimum, so every non-null value lands in exactly one bin. A column with too few distinct values for `q` bins returns an error.
+- **`GetDummies(column)`**: One-hot encode a column into `bool` indicator columns named `<column>_<value>`, placed where the original column was. For a categorical column (from `AsCategorical`, `Cut`, or `Qcut`) indicators follow category order and include empty categories; otherwise values are sorted. A null row is `false` in every indicator, as in pandas.
+
+```go
+// Age groups, income quartiles, then one-hot encode both for a model
+df, _ = df.Cut("Age", []float64{math.Inf(-1), 17, 64, math.Inf(1)}, []string{"minor", "adult", "senior"})
+df, _ = df.Qcut("Income", 4, []string{"Q1", "Q2", "Q3", "Q4"})
+df, _ = df.GetDummies("Age")    // Age_minor, Age_adult, Age_senior
+df, _ = df.GetDummies("Income") // Income_Q1 ... Income_Q4
+```
+
+See `examples/ml_prep/` for a complete working example.
+
 ### Handling Missing Data
 
 GPandas provides null-aware cleaning operations:
